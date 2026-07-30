@@ -1,0 +1,28 @@
+{
+	"schemaVersion": 1,
+	"id": "islandcoreclient",
+	"version": "${version}",
+	"name": "IslandCore Client",
+	"description": "Cliente companion de IslandCore: interfaces gráficas y utilidades del lado del cliente para servidores SkyFramework.",
+	"authors": [
+		"SkyFramework Team"
+	],
+	"contact": {
+		"homepage": "https://fabricmc.net/",
+		"sources": "https://github.com/SkyFrameworkTeam/IslandCoreClient"
+	},
+	"license": "CC0-1.0",
+	"icon": "assets/islandcoreclient/icon.png",
+	"environment": "client",
+	"entrypoints": {
+		"client": [
+			"com.skyframework.islandcoreclient.IslandCoreClientMod"
+		]
+	},
+	"depends": {
+		"fabricloader": ">=0.19.3",
+		"minecraft": "~1.21.1",
+		"java": ">=21",
+		"fabric-api": "*"
+	}
+}
