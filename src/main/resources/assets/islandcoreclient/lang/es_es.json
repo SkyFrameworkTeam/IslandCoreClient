@@ -11,6 +11,8 @@
 	"islandcoreclient.dashboard.members_button": "Miembros",
 	"islandcoreclient.dashboard.biome_button": "Bioma",
 	"islandcoreclient.dashboard.limits_button": "Límites",
+	"islandcoreclient.dashboard.teleports_button": "Teletransportes",
+	"islandcoreclient.dashboard.delete_button": "Eliminar isla",
 	"islandcoreclient.dashboard.invite_accept": "Aceptar",
 	"islandcoreclient.dashboard.invite_ignore": "Ignorar",
 	"islandcoreclient.dashboard.invite_banner": "%s te ha invitado a su isla",
@@ -51,5 +53,23 @@
 	"islandcoreclient.limits.size_label": "Tamaño: %s/%s",
 	"islandcoreclient.limits.upgrade_button": "Ampliar isla",
 	"islandcoreclient.limits.max_reached": "Ya tienes el tamaño máximo permitido",
-	"islandcoreclient.limits.home_cooldown": "Cooldown de home: %s segundos"
+	"islandcoreclient.limits.home_cooldown": "Cooldown de home: %s segundos",
+
+	"islandcoreclient.teleports.title": "Teletransportes",
+	"islandcoreclient.teleports.teleport_button": "Teletransportar",
+	"islandcoreclient.teleports.type.home": "Home",
+	"islandcoreclient.teleports.type.spawn": "Spawn",
+	"islandcoreclient.teleports.type.rtp": "RTP",
+	"islandcoreclient.teleports.type.farming": "Farming",
+	"islandcoreclient.error.rtp_disabled_dimension": "RTP deshabilitado en esta dimensión",
+	"islandcoreclient.error.farming_disabled_config": "Farming deshabilitado por configuración del servidor",
+
+	"islandcoreclient.delete.title": "Eliminar isla",
+	"islandcoreclient.delete.warning_line1": "¡Esta acción es irreversible!",
+	"islandcoreclient.delete.warning_line2": "Se eliminará tu isla, sus construcciones y todo su contenido.",
+	"islandcoreclient.delete.request_button": "Solicitar eliminación",
+	"islandcoreclient.delete.confirm_title": "Eliminar isla",
+	"islandcoreclient.delete.confirm_message": "¿Seguro que quieres eliminar tu isla? Esta acción no se puede deshacer.",
+	"islandcoreclient.delete.pending": "Eliminación solicitada — expira en %ss",
+	"islandcoreclient.delete.confirm_button": "Confirmar eliminación"
 }

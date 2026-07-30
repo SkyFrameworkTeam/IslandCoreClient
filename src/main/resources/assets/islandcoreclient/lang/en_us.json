@@ -11,6 +11,8 @@
 	"islandcoreclient.dashboard.members_button": "Members",
 	"islandcoreclient.dashboard.biome_button": "Biome",
 	"islandcoreclient.dashboard.limits_button": "Limits",
+	"islandcoreclient.dashboard.teleports_button": "Teleports",
+	"islandcoreclient.dashboard.delete_button": "Delete island",
 	"islandcoreclient.dashboard.invite_accept": "Accept",
 	"islandcoreclient.dashboard.invite_ignore": "Ignore",
 	"islandcoreclient.dashboard.invite_banner": "%s has invited you to their island",
@@ -51,5 +53,23 @@
 	"islandcoreclient.limits.size_label": "Size: %s/%s",
 	"islandcoreclient.limits.upgrade_button": "Upgrade island",
 	"islandcoreclient.limits.max_reached": "You already have the maximum allowed size",
-	"islandcoreclient.limits.home_cooldown": "Home cooldown: %s seconds"
+	"islandcoreclient.limits.home_cooldown": "Home cooldown: %s seconds",
+
+	"islandcoreclient.teleports.title": "Teleports",
+	"islandcoreclient.teleports.teleport_button": "Teleport",
+	"islandcoreclient.teleports.type.home": "Home",
+	"islandcoreclient.teleports.type.spawn": "Spawn",
+	"islandcoreclient.teleports.type.rtp": "RTP",
+	"islandcoreclient.teleports.type.farming": "Farming",
+	"islandcoreclient.error.rtp_disabled_dimension": "RTP disabled in this dimension",
+	"islandcoreclient.error.farming_disabled_config": "Farming disabled by server configuration",
+
+	"islandcoreclient.delete.title": "Delete island",
+	"islandcoreclient.delete.warning_line1": "This action is irreversible!",
+	"islandcoreclient.delete.warning_line2": "Your island, its builds, and all its contents will be deleted.",
+	"islandcoreclient.delete.request_button": "Request deletion",
+	"islandcoreclient.delete.confirm_title": "Delete island",
+	"islandcoreclient.delete.confirm_message": "Are you sure you want to delete your island? This action cannot be undone.",
+	"islandcoreclient.delete.pending": "Deletion requested — expires in %ss",
+	"islandcoreclient.delete.confirm_button": "Confirm deletion"
 }

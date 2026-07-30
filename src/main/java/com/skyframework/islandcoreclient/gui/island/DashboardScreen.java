@@ -10,6 +10,7 @@ import com.skyframework.islandcoreclient.state.DebugSimulationHelpers;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.text.Text;
+import net.minecraft.util.Formatting;
 
 /**
  * Root screen of the IslandCore Client menu. Content below the top bar only appears once the
@@ -29,6 +30,8 @@ public class DashboardScreen extends BaseMenuScreen {
 	private ButtonWidget membersButton;
 	private ButtonWidget biomeButton;
 	private ButtonWidget limitsButton;
+	private ButtonWidget teleportsButton;
+	private ButtonWidget deleteIslandButton;
 
 	private ButtonWidget acceptInviteButton;
 	private ButtonWidget ignoreInviteButton;
@@ -39,29 +42,41 @@ public class DashboardScreen extends BaseMenuScreen {
 
 	@Override
 	protected void initContent() {
-		int totalWidth = ACTION_BUTTON_WIDTH * 4 + ACTION_BUTTON_GAP * 3;
+		int totalWidth = ACTION_BUTTON_WIDTH * 3 + ACTION_BUTTON_GAP * 2;
 		int startX = this.width / 2 - totalWidth / 2;
-		int y = this.height - 68;
+		int row1Y = this.height - 92;
+		int row2Y = this.height - 68;
 
 		this.settingsButton = this.addDrawableChild(ButtonWidget.builder(
 						Text.translatable("islandcoreclient.dashboard.settings_button"),
 						button -> this.client.setScreen(new SettingsScreen(this)))
-				.dimensions(startX, y, ACTION_BUTTON_WIDTH, ACTION_BUTTON_HEIGHT)
+				.dimensions(startX, row1Y, ACTION_BUTTON_WIDTH, ACTION_BUTTON_HEIGHT)
 				.build());
 		this.membersButton = this.addDrawableChild(ButtonWidget.builder(
 						Text.translatable("islandcoreclient.dashboard.members_button"),
 						button -> this.client.setScreen(new MembersScreen(this)))
-				.dimensions(startX + (ACTION_BUTTON_WIDTH + ACTION_BUTTON_GAP), y, ACTION_BUTTON_WIDTH, ACTION_BUTTON_HEIGHT)
+				.dimensions(startX + (ACTION_BUTTON_WIDTH + ACTION_BUTTON_GAP), row1Y, ACTION_BUTTON_WIDTH, ACTION_BUTTON_HEIGHT)
 				.build());
 		this.biomeButton = this.addDrawableChild(ButtonWidget.builder(
 						Text.translatable("islandcoreclient.dashboard.biome_button"),
 						button -> this.client.setScreen(new BiomeScreen(this)))
-				.dimensions(startX + (ACTION_BUTTON_WIDTH + ACTION_BUTTON_GAP) * 2, y, ACTION_BUTTON_WIDTH, ACTION_BUTTON_HEIGHT)
+				.dimensions(startX + (ACTION_BUTTON_WIDTH + ACTION_BUTTON_GAP) * 2, row1Y, ACTION_BUTTON_WIDTH, ACTION_BUTTON_HEIGHT)
 				.build());
+
 		this.limitsButton = this.addDrawableChild(ButtonWidget.builder(
 						Text.translatable("islandcoreclient.dashboard.limits_button"),
 						button -> this.client.setScreen(new LimitsScreen(this)))
-				.dimensions(startX + (ACTION_BUTTON_WIDTH + ACTION_BUTTON_GAP) * 3, y, ACTION_BUTTON_WIDTH, ACTION_BUTTON_HEIGHT)
+				.dimensions(startX, row2Y, ACTION_BUTTON_WIDTH, ACTION_BUTTON_HEIGHT)
+				.build());
+		this.teleportsButton = this.addDrawableChild(ButtonWidget.builder(
+						Text.translatable("islandcoreclient.dashboard.teleports_button"),
+						button -> this.client.setScreen(new TeleportsScreen(this)))
+				.dimensions(startX + (ACTION_BUTTON_WIDTH + ACTION_BUTTON_GAP), row2Y, ACTION_BUTTON_WIDTH, ACTION_BUTTON_HEIGHT)
+				.build());
+		this.deleteIslandButton = this.addDrawableChild(ButtonWidget.builder(
+						Text.translatable("islandcoreclient.dashboard.delete_button").formatted(Formatting.RED),
+						button -> this.client.setScreen(new DeleteIslandScreen(this)))
+				.dimensions(startX + (ACTION_BUTTON_WIDTH + ACTION_BUTTON_GAP) * 2, row2Y, ACTION_BUTTON_WIDTH, ACTION_BUTTON_HEIGHT)
 				.build());
 
 		int ignoreX = this.width - 16 - 66;
@@ -89,6 +104,16 @@ public class DashboardScreen extends BaseMenuScreen {
 						button -> DebugSimulationHelpers.toggleBiomeCooldownDebug())
 				.dimensions(132, this.height - 20, 140, 16)
 				.build());
+		this.addDrawableChild(ButtonWidget.builder(
+						Text.literal("[DEBUG] Forzar conectado"),
+						button -> DebugSimulationHelpers.forceConnectedDebug())
+				.dimensions(276, this.height - 20, 130, 16)
+				.build());
+		this.addDrawableChild(ButtonWidget.builder(
+						Text.literal("[DEBUG] Cooldowns TP"),
+						button -> DebugSimulationHelpers.toggleTeleportCooldownsDebug())
+				.dimensions(410, this.height - 20, 120, 16)
+				.build());
 	}
 
 	@Override
@@ -103,6 +128,10 @@ public class DashboardScreen extends BaseMenuScreen {
 		this.biomeButton.active = connected;
 		this.limitsButton.visible = connected;
 		this.limitsButton.active = connected;
+		this.teleportsButton.visible = connected;
+		this.teleportsButton.active = connected;
+		this.deleteIslandButton.visible = connected;
+		this.deleteIslandButton.active = connected;
 
 		ClientIncomingInviteView invite = ClientIslandCache.getIncomingInvite();
 		boolean hasInvite = connected && invite != null;

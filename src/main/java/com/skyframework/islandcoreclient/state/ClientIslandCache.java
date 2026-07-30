@@ -1,7 +1,9 @@
 package com.skyframework.islandcoreclient.state;
 
 import java.util.ArrayList;
+import java.util.EnumMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 import net.minecraft.client.MinecraftClient;
@@ -60,6 +62,14 @@ public final class ClientIslandCache {
 	private static volatile String currentBiomeId = "minecraft:plains";
 	// Absolute deadline rather than a per-tick countdown, same reasoning as pending invites.
 	private static volatile long biomeCooldownEndMillis = 0L;
+
+	private static final long TELEPORT_REQUEST_COOLDOWN_SECONDS = 600L;
+	private static final Map<ClientTeleportType, ClientTeleportState> TELEPORT_STATES = new EnumMap<>(Map.of(
+			ClientTeleportType.HOME, new ClientTeleportState(true, 0L, null),
+			ClientTeleportType.SPAWN, new ClientTeleportState(true, 200L, null),
+			ClientTeleportType.RTP, new ClientTeleportState(false, 0L, "islandcoreclient.error.rtp_disabled_dimension"),
+			ClientTeleportType.FARMING, new ClientTeleportState(false, 0L, "islandcoreclient.error.farming_disabled_config")
+	));
 
 	private ClientIslandCache() {
 	}
@@ -166,6 +176,20 @@ public final class ClientIslandCache {
 
 	public static void clearBiomeCooldown() {
 		biomeCooldownEndMillis = 0L;
+	}
+
+	public static ClientTeleportState getTeleportState(ClientTeleportType type) {
+		return TELEPORT_STATES.get(type);
+	}
+
+	// TODO: replace with sending TeleportRequestC2S and awaiting ActionResultS2C once IslandCore
+	// implements the teleport protocol. TeleportsScreen should not need to change when that
+	// happens.
+	public static void simulateTeleportRequest(ClientTeleportType type) {
+		ClientTeleportState state = TELEPORT_STATES.get(type);
+		if (state != null) {
+			state.startCooldown(TELEPORT_REQUEST_COOLDOWN_SECONDS);
+		}
 	}
 
 	private static UUID currentPlayerUuid() {
