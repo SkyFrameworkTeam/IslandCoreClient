@@ -1,5 +1,8 @@
 package com.skyframework.islandcoreclient;
 
+import com.skyframework.islandcoreclient.keybind.OpenMenuKeybind;
+import com.skyframework.islandcoreclient.network.ClientPacketHandlers;
+
 import net.fabricmc.api.ClientModInitializer;
 
 import org.slf4j.Logger;
@@ -12,6 +15,9 @@ public class IslandCoreClientMod implements ClientModInitializer {
 
 	@Override
 	public void onInitializeClient() {
+		ClientPacketHandlers.register();
+		OpenMenuKeybind.register();
+
 		LOGGER.info("IslandCore Client initialized.");
 	}
 }
