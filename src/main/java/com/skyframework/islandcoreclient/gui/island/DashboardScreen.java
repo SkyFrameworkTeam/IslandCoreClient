@@ -4,6 +4,7 @@ import com.skyframework.islandcoreclient.gui.common.BaseMenuScreen;
 import com.skyframework.islandcoreclient.state.ClientConnectionState;
 
 import net.minecraft.client.gui.DrawContext;
+import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.text.Text;
 
 /**
@@ -11,14 +12,30 @@ import net.minecraft.text.Text;
  * the real dashboard content lands once the server implements its networking.
  */
 public class DashboardScreen extends BaseMenuScreen {
+	private ButtonWidget settingsButton;
+
 	public DashboardScreen() {
 		super(Text.literal("Dashboard"), null);
+	}
+
+	@Override
+	protected void initContent() {
+		this.settingsButton = this.addDrawableChild(ButtonWidget.builder(
+						Text.translatable("islandcoreclient.dashboard.settings_button"),
+						button -> this.client.setScreen(new SettingsScreen(this)))
+				.dimensions(this.width / 2 - 100, this.height / 2 + 30, 200, 20)
+				.build());
 	}
 
 	@Override
 	protected void renderContent(DrawContext context, int mouseX, int mouseY, float delta) {
 		int centerX = this.width / 2;
 		int centerY = this.height / 2;
+
+		// Settings is an island action: only makes sense once the handshake actually connected.
+		boolean connected = ClientConnectionState.getStatus() == ClientConnectionState.Status.CONNECTED;
+		this.settingsButton.visible = connected;
+		this.settingsButton.active = connected;
 
 		switch (ClientConnectionState.getStatus()) {
 			case UNKNOWN -> context.drawCenteredTextWithShadow(

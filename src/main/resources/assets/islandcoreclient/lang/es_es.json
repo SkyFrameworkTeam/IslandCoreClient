@@ -1,4 +1,10 @@
 {
 	"key.category.islandcoreclient": "IslandCore Client",
-	"key.islandcoreclient.open_menu": "Abrir menú de isla"
+	"key.islandcoreclient.open_menu": "Abrir menú de isla",
+
+	"islandcoreclient.settings.title": "Ajustes de la isla",
+	"islandcoreclient.settings.firespread": "Propagación de fuego",
+	"islandcoreclient.settings.pvp": "Daño entre jugadores (PvP)",
+	"islandcoreclient.settings.mobdamage": "Daño de mobs/entidades",
+	"islandcoreclient.dashboard.settings_button": "Ajustes"
 }

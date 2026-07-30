@@ -1,4 +1,10 @@
 {
 	"key.category.islandcoreclient": "IslandCore Client",
-	"key.islandcoreclient.open_menu": "Open Island Menu"
+	"key.islandcoreclient.open_menu": "Open Island Menu",
+
+	"islandcoreclient.settings.title": "Island settings",
+	"islandcoreclient.settings.firespread": "Fire spread",
+	"islandcoreclient.settings.pvp": "Player damage (PvP)",
+	"islandcoreclient.settings.mobdamage": "Mob/entity damage",
+	"islandcoreclient.dashboard.settings_button": "Settings"
 }
