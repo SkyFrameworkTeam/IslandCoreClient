@@ -24,6 +24,14 @@ public final class DebugSimulationHelpers {
 		ClientIslandCache.setHasIsland(!ClientIslandCache.hasIsland());
 	}
 
+	public static void toggleAdminDebug() {
+		ClientConnectionState.toggleOperatorDebug();
+	}
+
+	public static void toggleSpawnExistsDebug() {
+		ClientIslandCache.setSpawnExists(!ClientIslandCache.spawnExists());
+	}
+
 	public static void toggleIncomingInviteDebug() {
 		if (ClientIslandCache.getIncomingInvite() == null) {
 			ClientIslandCache.setIncomingInvite(new ClientIncomingInviteView("Peroten"));

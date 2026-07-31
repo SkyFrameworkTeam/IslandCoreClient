@@ -1,5 +1,9 @@
 package com.skyframework.islandcoreclient.gui.island;
 
+import com.skyframework.islandcoreclient.gui.admin.AdminIslandListScreen;
+import com.skyframework.islandcoreclient.gui.admin.DimensionManagerScreen;
+import com.skyframework.islandcoreclient.gui.admin.SpawnManagerScreen;
+import com.skyframework.islandcoreclient.gui.admin.VanillaResetScreen;
 import com.skyframework.islandcoreclient.gui.common.BaseMenuScreen;
 import com.skyframework.islandcoreclient.state.ClientConnectionState;
 import com.skyframework.islandcoreclient.state.ClientIncomingInviteView;
@@ -15,6 +19,10 @@ import net.minecraft.util.Formatting;
 /**
  * Root screen of the IslandCore Client menu. Content below the top bar only appears once the
  * handshake connected; while UNKNOWN/UNSUPPORTED it just reflects that state (see Sprint 1).
+ *
+ * <p>The Admin tab (Block C) is not a separate Screen: it reuses this same frame/top bar and
+ * just swaps which widgets {@link #initContent()} builds and which section
+ * {@link #renderContent} draws, toggled by {@link #showingAdmin}.
  */
 public class DashboardScreen extends BaseMenuScreen {
 	private static final int ACTION_BUTTON_WIDTH = 80;
@@ -26,16 +34,24 @@ public class DashboardScreen extends BaseMenuScreen {
 	private static final int CONTENT_START_Y = INVITE_BANNER_Y + INVITE_BANNER_HEIGHT + 8;
 	private static final int LINE_HEIGHT = 11;
 
+	private static final int ADMIN_TOGGLE_WIDTH = 90;
+	private static final int ADMIN_GATEWAY_BUTTON_WIDTH = 220;
+	private static final int ADMIN_GATEWAY_BUTTON_HEIGHT = 20;
+	private static final int ADMIN_GATEWAY_GAP = 8;
+
+	private boolean showingAdmin = false;
+
+	private ButtonWidget adminToggleButton;
+
+	// Player-view widgets (only non-null while !showingAdmin).
 	private ButtonWidget settingsButton;
 	private ButtonWidget membersButton;
 	private ButtonWidget biomeButton;
 	private ButtonWidget limitsButton;
 	private ButtonWidget teleportsButton;
 	private ButtonWidget deleteIslandButton;
-
 	private ButtonWidget acceptInviteButton;
 	private ButtonWidget ignoreInviteButton;
-
 	private ButtonWidget createIslandButton;
 
 	public DashboardScreen() {
@@ -44,6 +60,62 @@ public class DashboardScreen extends BaseMenuScreen {
 
 	@Override
 	protected void initContent() {
+		this.adminToggleButton = this.addDrawableChild(ButtonWidget.builder(
+						this.showingAdmin
+								? Text.translatable("islandcoreclient.dashboard.my_island_button")
+								: Text.translatable("islandcoreclient.dashboard.admin_button"),
+						button -> {
+							this.showingAdmin = !this.showingAdmin;
+							this.clearAndInit();
+						})
+				.dimensions(this.width - 8 - ADMIN_TOGGLE_WIDTH, (TOP_BAR_HEIGHT - 20) / 2, ADMIN_TOGGLE_WIDTH, 20)
+				.build());
+
+		if (this.showingAdmin) {
+			initAdminGatewayContent();
+		} else {
+			initPlayerContent();
+		}
+
+		// DEBUG - quitar cuando haya snapshot real.
+		this.addDrawableChild(ButtonWidget.builder(
+						Text.literal("[DEBUG] Invitación"),
+						button -> DebugSimulationHelpers.toggleIncomingInviteDebug())
+				.dimensions(8, this.height - 20, 120, 16)
+				.build());
+		this.addDrawableChild(ButtonWidget.builder(
+						Text.literal("[DEBUG] Cooldown bioma"),
+						button -> DebugSimulationHelpers.toggleBiomeCooldownDebug())
+				.dimensions(132, this.height - 20, 140, 16)
+				.build());
+		this.addDrawableChild(ButtonWidget.builder(
+						Text.literal("[DEBUG] Forzar conectado"),
+						button -> DebugSimulationHelpers.forceConnectedDebug())
+				.dimensions(276, this.height - 20, 130, 16)
+				.build());
+		this.addDrawableChild(ButtonWidget.builder(
+						Text.literal("[DEBUG] Cooldowns TP"),
+						button -> DebugSimulationHelpers.toggleTeleportCooldownsDebug())
+				.dimensions(410, this.height - 20, 120, 16)
+				.build());
+		this.addDrawableChild(ButtonWidget.builder(
+						Text.literal("[DEBUG] Alternar sin isla"),
+						button -> DebugSimulationHelpers.toggleHasIslandDebug())
+				.dimensions(8, this.height - 40, 160, 16)
+				.build());
+		this.addDrawableChild(ButtonWidget.builder(
+						Text.literal("[DEBUG] Forzar admin"),
+						button -> DebugSimulationHelpers.toggleAdminDebug())
+				.dimensions(172, this.height - 40, 140, 16)
+				.build());
+		this.addDrawableChild(ButtonWidget.builder(
+						Text.literal("[DEBUG] Alternar spawn"),
+						button -> DebugSimulationHelpers.toggleSpawnExistsDebug())
+				.dimensions(316, this.height - 40, 150, 16)
+				.build());
+	}
+
+	private void initPlayerContent() {
 		int totalWidth = ACTION_BUTTON_WIDTH * 3 + ACTION_BUTTON_GAP * 2;
 		int startX = this.width / 2 - totalWidth / 2;
 		int row1Y = this.height - 92;
@@ -100,37 +172,58 @@ public class DashboardScreen extends BaseMenuScreen {
 						button -> onCreateIslandClicked())
 				.dimensions(this.width / 2 - 100, this.height - 116, 200, 20)
 				.build());
+	}
 
-		// DEBUG - quitar cuando haya snapshot real.
+	private void initAdminGatewayContent() {
+		int totalHeight = ADMIN_GATEWAY_BUTTON_HEIGHT * 4 + ADMIN_GATEWAY_GAP * 3;
+		int x = this.width / 2 - ADMIN_GATEWAY_BUTTON_WIDTH / 2;
+		int y = this.height / 2 - totalHeight / 2;
+
 		this.addDrawableChild(ButtonWidget.builder(
-						Text.literal("[DEBUG] Invitación"),
-						button -> DebugSimulationHelpers.toggleIncomingInviteDebug())
-				.dimensions(8, this.height - 20, 120, 16)
+						Text.translatable("islandcoreclient.admin.dashboard.island_list_button"),
+						button -> this.client.setScreen(new AdminIslandListScreen(this)))
+				.dimensions(x, y, ADMIN_GATEWAY_BUTTON_WIDTH, ADMIN_GATEWAY_BUTTON_HEIGHT)
 				.build());
+		y += ADMIN_GATEWAY_BUTTON_HEIGHT + ADMIN_GATEWAY_GAP;
 		this.addDrawableChild(ButtonWidget.builder(
-						Text.literal("[DEBUG] Cooldown bioma"),
-						button -> DebugSimulationHelpers.toggleBiomeCooldownDebug())
-				.dimensions(132, this.height - 20, 140, 16)
+						Text.translatable("islandcoreclient.admin.dashboard.spawn_button"),
+						button -> this.client.setScreen(new SpawnManagerScreen(this)))
+				.dimensions(x, y, ADMIN_GATEWAY_BUTTON_WIDTH, ADMIN_GATEWAY_BUTTON_HEIGHT)
 				.build());
+		y += ADMIN_GATEWAY_BUTTON_HEIGHT + ADMIN_GATEWAY_GAP;
 		this.addDrawableChild(ButtonWidget.builder(
-						Text.literal("[DEBUG] Forzar conectado"),
-						button -> DebugSimulationHelpers.forceConnectedDebug())
-				.dimensions(276, this.height - 20, 130, 16)
+						Text.translatable("islandcoreclient.admin.dashboard.dimension_manager_button"),
+						button -> this.client.setScreen(new DimensionManagerScreen(this)))
+				.dimensions(x, y, ADMIN_GATEWAY_BUTTON_WIDTH, ADMIN_GATEWAY_BUTTON_HEIGHT)
 				.build());
+		y += ADMIN_GATEWAY_BUTTON_HEIGHT + ADMIN_GATEWAY_GAP;
 		this.addDrawableChild(ButtonWidget.builder(
-						Text.literal("[DEBUG] Cooldowns TP"),
-						button -> DebugSimulationHelpers.toggleTeleportCooldownsDebug())
-				.dimensions(410, this.height - 20, 120, 16)
-				.build());
-		this.addDrawableChild(ButtonWidget.builder(
-						Text.literal("[DEBUG] Alternar sin isla"),
-						button -> DebugSimulationHelpers.toggleHasIslandDebug())
-				.dimensions(8, this.height - 40, 160, 16)
+						Text.translatable("islandcoreclient.admin.dashboard.vanilla_reset_button"),
+						button -> this.client.setScreen(new VanillaResetScreen(this)))
+				.dimensions(x, y, ADMIN_GATEWAY_BUTTON_WIDTH, ADMIN_GATEWAY_BUTTON_HEIGHT)
 				.build());
 	}
 
 	@Override
 	protected void renderContent(DrawContext context, int mouseX, int mouseY, float delta) {
+		boolean isOperator = ClientConnectionState.isOperator();
+		this.adminToggleButton.visible = isOperator;
+		this.adminToggleButton.active = isOperator;
+
+		if (this.showingAdmin) {
+			renderAdminGatewayContent(context);
+		} else {
+			renderPlayerContent(context);
+		}
+	}
+
+	private void renderAdminGatewayContent(DrawContext context) {
+		context.drawCenteredTextWithShadow(this.textRenderer,
+				Text.translatable("islandcoreclient.admin.dashboard.heading"),
+				this.width / 2, TOP_BAR_HEIGHT + 20, 0xFFFFFF);
+	}
+
+	private void renderPlayerContent(DrawContext context) {
 		boolean connected = ClientConnectionState.getStatus() == ClientConnectionState.Status.CONNECTED;
 		boolean hasIsland = ClientIslandCache.hasIsland();
 		// Every island action only makes sense once the handshake actually connected; with no

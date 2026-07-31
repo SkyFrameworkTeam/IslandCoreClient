@@ -2,13 +2,16 @@ package com.skyframework.islandcoreclient.state;
 
 import java.util.ArrayList;
 import java.util.EnumMap;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.network.ClientPlayerEntity;
 import net.minecraft.text.Text;
+import net.minecraft.util.math.BlockPos;
 
 import org.jetbrains.annotations.Nullable;
 
@@ -72,6 +75,34 @@ public final class ClientIslandCache {
 			ClientTeleportType.SPAWN, new ClientTeleportState(true, 200L, null),
 			ClientTeleportType.RTP, new ClientTeleportState(false, 0L, "islandcoreclient.error.rtp_disabled_dimension"),
 			ClientTeleportType.FARMING, new ClientTeleportState(false, 0L, "islandcoreclient.error.farming_disabled_config")
+	));
+
+	// Block C (Admin tab) simulated fixture data. Populated once at class init, same style as
+	// the rest of this file.
+	private static final List<ClientAdminIslandSummaryView> ADMIN_ISLANDS = new ArrayList<>(List.of(
+			new ClientAdminIslandSummaryView(UUID.randomUUID(), "Notch_Fan99", 60, 60, "PLAINS", "ACTIVE", 3),
+			new ClientAdminIslandSummaryView(UUID.randomUUID(), "Steve123", 30, 45, "DESERT", "ACTIVE", 1),
+			new ClientAdminIslandSummaryView(UUID.randomUUID(), "AlexBuilder", 50, 50, "FOREST", "ACTIVE", 5),
+			new ClientAdminIslandSummaryView(UUID.randomUUID(), "Grumpy_Cat", 20, 45, "SWAMP", "DELETING", 2),
+			new ClientAdminIslandSummaryView(UUID.randomUUID(), "SkyQueen", 45, 60, "PLAINS", "ACTIVE", 4)
+	));
+	private static final Map<UUID, ClientAdminIslandDetailView> ADMIN_ISLAND_DETAILS = buildAdminIslandDetails();
+
+	private static volatile boolean spawnExists = true;
+	private static volatile int spawnSize = 25;
+	@Nullable
+	private static volatile BlockPos spawnHomeLocation = new BlockPos(120, 68, -45);
+
+	private static final List<ClientDimensionView> DIMENSIONS = new ArrayList<>(List.of(
+			new ClientDimensionView("islandcore:islands", "Islands", ClientDimensionStyle.VOID_FLAT, 8362472L, "ACTIVE"),
+			new ClientDimensionView("islandcore:mining_world", "Mundo de Minería", ClientDimensionStyle.OVERWORLD_LIKE, -1928374651L, "ACTIVE"),
+			new ClientDimensionView("islandcore:the_abyss", "El Abismo", ClientDimensionStyle.NETHER_LIKE, 445566778L, "ACTIVE")
+	));
+
+	private static final Map<ClientResetDimension, ClientVanillaResetState> VANILLA_RESET_STATES = new EnumMap<>(Map.of(
+			ClientResetDimension.OVERWORLD, new ClientVanillaResetState(false, null, null),
+			ClientResetDimension.NETHER, new ClientVanillaResetState(true, ClientVanillaResetState.SeedMode.RANDOM, null),
+			ClientResetDimension.END, new ClientVanillaResetState(false, null, null)
 	));
 
 	private ClientIslandCache() {
@@ -201,6 +232,84 @@ public final class ClientIslandCache {
 		if (state != null) {
 			state.startCooldown(TELEPORT_REQUEST_COOLDOWN_SECONDS);
 		}
+	}
+
+	public static List<ClientAdminIslandSummaryView> getAdminIslands() {
+		return ADMIN_ISLANDS;
+	}
+
+	@Nullable
+	public static ClientAdminIslandDetailView getAdminIslandDetail(UUID ownerUuid) {
+		return ADMIN_ISLAND_DETAILS.get(ownerUuid);
+	}
+
+	public static void removeAdminIsland(UUID ownerUuid) {
+		ADMIN_ISLANDS.removeIf(summary -> summary.ownerUuid().equals(ownerUuid));
+		ADMIN_ISLAND_DETAILS.remove(ownerUuid);
+	}
+
+	public static boolean spawnExists() {
+		return spawnExists;
+	}
+
+	public static void setSpawnExists(boolean value) {
+		spawnExists = value;
+	}
+
+	public static int getSpawnSize() {
+		return spawnSize;
+	}
+
+	public static void setSpawnSize(int value) {
+		spawnSize = value;
+	}
+
+	@Nullable
+	public static BlockPos getSpawnHomeLocation() {
+		return spawnHomeLocation;
+	}
+
+	public static void setSpawnHomeLocation(BlockPos pos) {
+		spawnHomeLocation = pos;
+	}
+
+	public static List<ClientDimensionView> getDimensions() {
+		return DIMENSIONS;
+	}
+
+	public static void addDimension(ClientDimensionView dimension) {
+		DIMENSIONS.add(dimension);
+	}
+
+	public static void removeDimension(String id) {
+		DIMENSIONS.removeIf(dimension -> dimension.id().equals(id));
+	}
+
+	public static ClientVanillaResetState getVanillaResetState(ClientResetDimension dimension) {
+		return VANILLA_RESET_STATES.get(dimension);
+	}
+
+	private static Map<UUID, ClientAdminIslandDetailView> buildAdminIslandDetails() {
+		Map<UUID, ClientAdminIslandDetailView> details = new HashMap<>();
+		int gridIndex = 0;
+		for (ClientAdminIslandSummaryView summary : ADMIN_ISLANDS) {
+			List<ClientMemberView> members = new ArrayList<>();
+			members.add(new ClientMemberView(summary.ownerUuid(), summary.ownerName(), ClientMemberView.Role.OWNER));
+			for (int i = 1; i < summary.memberCount(); i++) {
+				members.add(new ClientMemberView(UUID.randomUUID(), "Miembro" + i, ClientMemberView.Role.MEMBER));
+			}
+
+			String slug = summary.ownerName().toLowerCase(Locale.ROOT);
+			details.put(summary.ownerUuid(), new ClientAdminIslandDetailView(
+					"island-" + slug, summary.ownerUuid(), summary.ownerName(), "islandcore:island/" + slug,
+					gridIndex * 500, gridIndex * 500,
+					summary.size(), summary.maxSize(), summary.maxSize() + 20,
+					members, summary.state(),
+					"12 mayo 2026, 18:03", "30 julio 2026, 09:15",
+					new ClientAdminIslandDetailView.EntityCounts(members.size(), 4, 12, 2, 30, 1)));
+			gridIndex++;
+		}
+		return details;
 	}
 
 	private static UUID currentPlayerUuid() {
