@@ -1,7 +1,15 @@
 package com.skyframework.islandcoreclient.gui.island;
 
 import com.skyframework.islandcoreclient.gui.common.BaseMenuScreen;
+import com.skyframework.islandcoreclient.network.ClientErrorToasts;
+import com.skyframework.islandcoreclient.network.PendingActionTracker;
+import com.skyframework.islandcoreclient.network.island.IslandSnapshotRequestC2S;
+import com.skyframework.islandcoreclient.network.island.IslandUpgradeC2S;
+import com.skyframework.islandcoreclient.network.teleport.TeleportStatusRequestC2S;
 import com.skyframework.islandcoreclient.state.ClientIslandCache;
+import com.skyframework.islandcoreclient.state.ClientTeleportType;
+
+import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
@@ -25,12 +33,16 @@ public class LimitsScreen extends BaseMenuScreen {
 
 	@Override
 	protected void initContent() {
+		// TeleportStatusS2C is the only real source for the home cooldown line below — reuses the
+		// same status TeleportsScreen fetches, since IslandSnapshotS2C carries no cooldown field.
+		ClientPlayNetworking.send(new TeleportStatusRequestC2S());
+
 		boolean atMax = ClientIslandCache.getSize() >= ClientIslandCache.getMaxSize();
 		Text buttonLabel = atMax
 				? Text.translatable("islandcoreclient.limits.max_reached")
 				: Text.translatable("islandcoreclient.limits.upgrade_button");
 
-		ButtonWidget upgradeButton = this.addDrawableChild(ButtonWidget.builder(buttonLabel, button -> simulateUpgrade())
+		ButtonWidget upgradeButton = this.addDrawableChild(ButtonWidget.builder(buttonLabel, button -> onUpgradeClicked())
 				.dimensions(CONTENT_X, BUTTON_Y, BAR_WIDTH, BUTTON_HEIGHT)
 				.build());
 		upgradeButton.active = !atMax;
@@ -50,20 +62,21 @@ public class LimitsScreen extends BaseMenuScreen {
 		context.fill(CONTENT_X, BAR_Y, CONTENT_X + filledWidth, BAR_Y + BAR_HEIGHT, 0xFF55AA55);
 		context.drawBorder(CONTENT_X, BAR_Y, BAR_WIDTH, BAR_HEIGHT, 0xFF000000);
 
+		long homeCooldownRemaining = ClientIslandCache.getTeleportState(ClientTeleportType.HOME).getCooldownRemainingSeconds();
 		context.drawTextWithShadow(this.textRenderer,
-				Text.translatable("islandcoreclient.limits.home_cooldown", ClientIslandCache.getHomeCooldownSeconds()),
+				Text.translatable("islandcoreclient.limits.home_cooldown", homeCooldownRemaining),
 				CONTENT_X, COOLDOWN_TEXT_Y, 0xAAAAAA);
 	}
 
-	private void simulateUpgrade() {
-		simulateIslandUpgrade();
-		this.clearAndInit();
-	}
-
-	// TODO: replace with sending IslandUpgradeC2S and awaiting ActionResultS2C once IslandCore
-	// implements the limits protocol. The progress bar and button above should not need to
-	// change when that happens.
-	private static void simulateIslandUpgrade() {
-		ClientIslandCache.upgradeIslandSize();
+	private void onUpgradeClicked() {
+		ClientPlayNetworking.send(new IslandUpgradeC2S());
+		PendingActionTracker.await((success, reasonKey) -> {
+			if (success) {
+				ClientPlayNetworking.send(new IslandSnapshotRequestC2S());
+			} else {
+				ClientErrorToasts.showReason(reasonKey);
+			}
+			this.clearAndInit();
+		});
 	}
 }

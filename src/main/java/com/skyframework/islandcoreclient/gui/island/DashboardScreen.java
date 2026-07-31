@@ -5,11 +5,18 @@ import com.skyframework.islandcoreclient.gui.admin.DimensionManagerScreen;
 import com.skyframework.islandcoreclient.gui.admin.SpawnManagerScreen;
 import com.skyframework.islandcoreclient.gui.admin.VanillaResetScreen;
 import com.skyframework.islandcoreclient.gui.common.BaseMenuScreen;
+import com.skyframework.islandcoreclient.network.ClientErrorToasts;
+import com.skyframework.islandcoreclient.network.PendingActionTracker;
+import com.skyframework.islandcoreclient.network.island.IslandCreateC2S;
+import com.skyframework.islandcoreclient.network.island.IslandSnapshotRequestC2S;
+import com.skyframework.islandcoreclient.network.member.MemberInviteAcceptC2S;
 import com.skyframework.islandcoreclient.state.ClientConnectionState;
 import com.skyframework.islandcoreclient.state.ClientIncomingInviteView;
 import com.skyframework.islandcoreclient.state.ClientIslandCache;
 import com.skyframework.islandcoreclient.state.ClientMemberView;
 import com.skyframework.islandcoreclient.state.DebugSimulationHelpers;
+
+import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.widget.ButtonWidget;
@@ -60,6 +67,13 @@ public class DashboardScreen extends BaseMenuScreen {
 
 	@Override
 	protected void initContent() {
+		if (ClientConnectionState.getStatus() == ClientConnectionState.Status.CONNECTED) {
+			// Refetch on every (re)entry to this screen — clearAndInit() from the admin toggle,
+			// navigating back from a child screen, or the very first open all run through here —
+			// so the summary/members list shown is never more stale than the last screen visit.
+			ClientPlayNetworking.send(new IslandSnapshotRequestC2S());
+		}
+
 		this.adminToggleButton = this.addDrawableChild(ButtonWidget.builder(
 						this.showingAdmin
 								? Text.translatable("islandcoreclient.dashboard.my_island_button")
@@ -77,7 +91,11 @@ public class DashboardScreen extends BaseMenuScreen {
 			initPlayerContent();
 		}
 
-		// DEBUG - quitar cuando haya snapshot real.
+		// DEBUG - quitar cuando haya snapshot real. Sprint "Integración de red real": el handshake,
+		// isOperator, el snapshot de isla y los teletransportes ya usan red real, así que los
+		// botones que forzaban esos estados (Forzar conectado, Cooldowns TP, Alternar sin isla,
+		// Forzar admin) se han quitado. Estos dos siguen aquí porque NINGÚN paquete actual expone
+		// invitaciones entrantes ni el cooldown de cambio de bioma (ver ClientIslandCache).
 		this.addDrawableChild(ButtonWidget.builder(
 						Text.literal("[DEBUG] Invitación"),
 						button -> DebugSimulationHelpers.toggleIncomingInviteDebug())
@@ -88,30 +106,11 @@ public class DashboardScreen extends BaseMenuScreen {
 						button -> DebugSimulationHelpers.toggleBiomeCooldownDebug())
 				.dimensions(132, this.height - 20, 140, 16)
 				.build());
-		this.addDrawableChild(ButtonWidget.builder(
-						Text.literal("[DEBUG] Forzar conectado"),
-						button -> DebugSimulationHelpers.forceConnectedDebug())
-				.dimensions(276, this.height - 20, 130, 16)
-				.build());
-		this.addDrawableChild(ButtonWidget.builder(
-						Text.literal("[DEBUG] Cooldowns TP"),
-						button -> DebugSimulationHelpers.toggleTeleportCooldownsDebug())
-				.dimensions(410, this.height - 20, 120, 16)
-				.build());
-		this.addDrawableChild(ButtonWidget.builder(
-						Text.literal("[DEBUG] Alternar sin isla"),
-						button -> DebugSimulationHelpers.toggleHasIslandDebug())
-				.dimensions(8, this.height - 40, 160, 16)
-				.build());
-		this.addDrawableChild(ButtonWidget.builder(
-						Text.literal("[DEBUG] Forzar admin"),
-						button -> DebugSimulationHelpers.toggleAdminDebug())
-				.dimensions(172, this.height - 40, 140, 16)
-				.build());
+		// Alternar spawn: la pantalla de gestión de Spawn (Admin) sigue simulada (Paso 3).
 		this.addDrawableChild(ButtonWidget.builder(
 						Text.literal("[DEBUG] Alternar spawn"),
 						button -> DebugSimulationHelpers.toggleSpawnExistsDebug())
-				.dimensions(316, this.height - 40, 150, 16)
+				.dimensions(8, this.height - 40, 150, 16)
 				.build());
 	}
 
@@ -158,9 +157,11 @@ public class DashboardScreen extends BaseMenuScreen {
 		int inviteButtonY = INVITE_BANNER_Y + (INVITE_BANNER_HEIGHT - 16) / 2;
 		this.acceptInviteButton = this.addDrawableChild(ButtonWidget.builder(
 						Text.translatable("islandcoreclient.dashboard.invite_accept"),
-						button -> ClientIslandCache.setIncomingInvite(null))
+						button -> onAcceptInviteClicked())
 				.dimensions(acceptX, inviteButtonY, 66, 16)
 				.build());
+		// "Ignorar" stays local-only: the protocol has no decline call, only accept (see
+		// MemberInviteAcceptC2S) — an ignored invite simply expires server-side on its own.
 		this.ignoreInviteButton = this.addDrawableChild(ButtonWidget.builder(
 						Text.translatable("islandcoreclient.dashboard.invite_ignore"),
 						button -> ClientIslandCache.setIncomingInvite(null))
@@ -304,13 +305,28 @@ public class DashboardScreen extends BaseMenuScreen {
 	}
 
 	private void onCreateIslandClicked() {
-		simulateIslandCreate();
-		this.clearAndInit();
+		ClientPlayNetworking.send(new IslandCreateC2S());
+		PendingActionTracker.await((success, reasonKey) -> {
+			if (success) {
+				ClientPlayNetworking.send(new IslandSnapshotRequestC2S());
+			} else {
+				ClientErrorToasts.showReason(reasonKey);
+			}
+		});
 	}
 
-	// TODO: replace with sending IslandCreateC2S and awaiting ActionResultS2C once IslandCore
-	// implements the island creation protocol.
-	private static void simulateIslandCreate() {
-		ClientIslandCache.setHasIsland(true);
+	private void onAcceptInviteClicked() {
+		ClientPlayNetworking.send(new MemberInviteAcceptC2S());
+		PendingActionTracker.await((success, reasonKey) -> {
+			// Clear the local banner either way: on success the invite was consumed server-side;
+			// on failure (e.g. NO_PENDING_INVITE) it was already stale, so there's nothing left to
+			// show either.
+			ClientIslandCache.setIncomingInvite(null);
+			if (success) {
+				ClientPlayNetworking.send(new IslandSnapshotRequestC2S());
+			} else {
+				ClientErrorToasts.showReason(reasonKey);
+			}
+		});
 	}
 }

@@ -1,37 +1,18 @@
 package com.skyframework.islandcoreclient.state;
 
-// DEBUG - quitar cuando haya snapshot real: fuerza estados difíciles de alcanzar sin red real
-// (invitación entrante, cooldown de bioma, handshake conectado, cooldowns de teletransporte)
-// para poder probarlos desde el Dashboard sin depender de que el servidor implemente el
-// protocolo todavía.
+// DEBUG - quitar cuando haya datos reales: fuerza estados que, a día de hoy, siguen sin tener
+// ninguna fuente de red real (ver Sprint "Integración de red real" para el resto de estados, que
+// ya se rellenan solos desde IslandSnapshotS2C/TeleportStatusS2C/BiomeTiersS2C/ServerHandshakeS2C
+// y ya no necesitan un botón [DEBUG] que los fuerce).
 public final class DebugSimulationHelpers {
 	// El valor real de un cambio de bioma (7 días), para poder probar el formato días/horas.
 	private static final long BIOME_COOLDOWN_DEBUG_SECONDS = 604800L;
-	private static final int FAKE_PROTOCOL_VERSION = 1;
-	// Corto a propósito (5 min): suficiente para ver el formato mm:ss sin esperar los 600s reales.
-	private static final long TELEPORT_COOLDOWN_DEBUG_SECONDS = 300L;
 
 	private DebugSimulationHelpers() {
 	}
 
-	// The dev client has no IslandCore server to answer the real handshake, so
-	// ClientConnectionState never reaches CONNECTED on its own: this fakes that response.
-	public static void forceConnectedDebug() {
-		ClientConnectionState.onServerHandshakeReceived(FAKE_PROTOCOL_VERSION, false);
-	}
-
-	public static void toggleHasIslandDebug() {
-		ClientIslandCache.setHasIsland(!ClientIslandCache.hasIsland());
-	}
-
-	public static void toggleAdminDebug() {
-		ClientConnectionState.toggleOperatorDebug();
-	}
-
-	public static void toggleSpawnExistsDebug() {
-		ClientIslandCache.setSpawnExists(!ClientIslandCache.spawnExists());
-	}
-
+	// Ningún paquete actual informa de invitaciones ENTRANTES (donde el jugador local es el
+	// invitado, no el dueño) — ni el snapshot ni ningún otro. Sigue siendo puramente local.
 	public static void toggleIncomingInviteDebug() {
 		if (ClientIslandCache.getIncomingInvite() == null) {
 			ClientIslandCache.setIncomingInvite(new ClientIncomingInviteView("Peroten"));
@@ -40,6 +21,8 @@ public final class DebugSimulationHelpers {
 		}
 	}
 
+	// Ni IslandSnapshotS2C ni BiomeTiersS2C exponen el cooldown de cambio de bioma restante ni el
+	// bioma actual de la isla — sigue siendo local/optimista (ver ClientIslandCache).
 	public static void toggleBiomeCooldownDebug() {
 		if (ClientIslandCache.getBiomeCooldownRemainingSeconds() > 0) {
 			ClientIslandCache.clearBiomeCooldown();
@@ -48,27 +31,9 @@ public final class DebugSimulationHelpers {
 		}
 	}
 
-	// RTP/Farming stay untouched: their block is a fixed reasonKey, not a cooldown.
-	public static void toggleTeleportCooldownsDebug() {
-		boolean anyOnCooldown = false;
-		for (ClientTeleportType type : ClientTeleportType.values()) {
-			ClientTeleportState state = ClientIslandCache.getTeleportState(type);
-			if (state.isEnabled() && state.getCooldownRemainingSeconds() > 0) {
-				anyOnCooldown = true;
-				break;
-			}
-		}
-
-		for (ClientTeleportType type : ClientTeleportType.values()) {
-			ClientTeleportState state = ClientIslandCache.getTeleportState(type);
-			if (!state.isEnabled()) {
-				continue;
-			}
-			if (anyOnCooldown) {
-				state.clearCooldown();
-			} else {
-				state.startCooldown(TELEPORT_COOLDOWN_DEBUG_SECONDS);
-			}
-		}
+	// La pantalla de gestión de Spawn (Admin) sigue simulada — el protocolo de admin no existe
+	// todavía en el servidor (Paso 3).
+	public static void toggleSpawnExistsDebug() {
+		ClientIslandCache.setSpawnExists(!ClientIslandCache.spawnExists());
 	}
 }

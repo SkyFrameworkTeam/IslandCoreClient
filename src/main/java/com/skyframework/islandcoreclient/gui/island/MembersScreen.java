@@ -3,9 +3,17 @@ package com.skyframework.islandcoreclient.gui.island;
 import java.util.UUID;
 
 import com.skyframework.islandcoreclient.gui.common.BaseMenuScreen;
+import com.skyframework.islandcoreclient.network.ClientErrorToasts;
+import com.skyframework.islandcoreclient.network.PendingActionTracker;
+import com.skyframework.islandcoreclient.network.island.IslandSnapshotRequestC2S;
+import com.skyframework.islandcoreclient.network.member.MemberInviteC2S;
+import com.skyframework.islandcoreclient.network.member.MemberRemoveC2S;
+import com.skyframework.islandcoreclient.network.member.MemberTrustC2S;
 import com.skyframework.islandcoreclient.state.ClientIslandCache;
 import com.skyframework.islandcoreclient.state.ClientMemberView;
 import com.skyframework.islandcoreclient.state.ClientPendingInviteView;
+
+import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
@@ -38,16 +46,16 @@ public class MembersScreen extends BaseMenuScreen {
 			int thisButtonY = rowY + (ROW_HEIGHT - ACTION_BUTTON_HEIGHT) / 2;
 			if (member.role() == ClientMemberView.Role.MEMBER) {
 				this.addDrawableChild(ButtonWidget.builder(Text.translatable("islandcoreclient.members.trust"),
-								button -> simulateTrust(member.uuid()))
+								button -> onTrustClicked(member.uuid()))
 						.dimensions(actionsX - ACTION_BUTTON_WIDTH - 4, thisButtonY, ACTION_BUTTON_WIDTH, ACTION_BUTTON_HEIGHT)
 						.build());
 				this.addDrawableChild(ButtonWidget.builder(Text.translatable("islandcoreclient.members.remove"),
-								button -> simulateRemove(member.uuid()))
+								button -> onRemoveClicked(member.uuid()))
 						.dimensions(actionsX, thisButtonY, ACTION_BUTTON_WIDTH, ACTION_BUTTON_HEIGHT)
 						.build());
 			} else if (member.role() == ClientMemberView.Role.TRUSTED) {
 				this.addDrawableChild(ButtonWidget.builder(Text.translatable("islandcoreclient.members.remove"),
-								button -> simulateRemove(member.uuid()))
+								button -> onRemoveClicked(member.uuid()))
 						.dimensions(actionsX, thisButtonY, ACTION_BUTTON_WIDTH, ACTION_BUTTON_HEIGHT)
 						.build());
 			}
@@ -66,7 +74,7 @@ public class MembersScreen extends BaseMenuScreen {
 		this.addDrawableChild(this.inviteField);
 
 		this.addDrawableChild(ButtonWidget.builder(Text.translatable("islandcoreclient.members.invite_button"),
-						button -> simulateInvite())
+						button -> onInviteClicked())
 				.dimensions(fieldX + fieldWidth + 4, fieldY, buttonWidth, INVITE_ROW_HEIGHT)
 				.build());
 	}
@@ -93,39 +101,45 @@ public class MembersScreen extends BaseMenuScreen {
 		}
 	}
 
-	private void simulateTrust(UUID uuid) {
-		simulateMemberTrust(uuid);
-		this.clearAndInit();
+	private void onTrustClicked(UUID uuid) {
+		ClientPlayNetworking.send(new MemberTrustC2S(uuid));
+		PendingActionTracker.await((success, reasonKey) -> {
+			if (success) {
+				ClientIslandCache.promoteToTrusted(uuid);
+			} else {
+				ClientErrorToasts.showReason(reasonKey);
+			}
+			this.clearAndInit();
+		});
 	}
 
-	private void simulateRemove(UUID uuid) {
-		simulateMemberRemove(uuid);
-		this.clearAndInit();
+	private void onRemoveClicked(UUID uuid) {
+		ClientPlayNetworking.send(new MemberRemoveC2S(uuid));
+		PendingActionTracker.await((success, reasonKey) -> {
+			if (success) {
+				ClientIslandCache.removeMember(uuid);
+			} else {
+				ClientErrorToasts.showReason(reasonKey);
+			}
+			this.clearAndInit();
+		});
 	}
 
-	private void simulateInvite() {
+	private void onInviteClicked() {
 		String targetName = this.inviteField.getText().trim();
 		if (targetName.isEmpty()) {
 			return;
 		}
-		simulateMemberInvite(targetName);
-		this.clearAndInit();
-	}
-
-	// TODO: replace with sending MemberTrustC2S and awaiting ActionResultS2C once IslandCore
-	// implements the member protocol. The row layout above should not need to change.
-	private static void simulateMemberTrust(UUID uuid) {
-		ClientIslandCache.promoteToTrusted(uuid);
-	}
-
-	// TODO: replace with sending MemberRemoveC2S and awaiting ActionResultS2C once IslandCore
-	// implements the member protocol.
-	private static void simulateMemberRemove(UUID uuid) {
-		ClientIslandCache.removeMember(uuid);
-	}
-
-	// TODO: replace with sending MemberInviteC2S once IslandCore implements the member protocol.
-	private static void simulateMemberInvite(String targetName) {
-		ClientIslandCache.addPendingInvite(targetName);
+		ClientPlayNetworking.send(new MemberInviteC2S(targetName));
+		PendingActionTracker.await((success, reasonKey) -> {
+			if (success) {
+				// The real expiry (5 minutes) comes back on the next snapshot refresh; refetch
+				// now instead of guessing it locally.
+				ClientPlayNetworking.send(new IslandSnapshotRequestC2S());
+			} else {
+				ClientErrorToasts.showReason(reasonKey);
+			}
+			this.clearAndInit();
+		});
 	}
 }

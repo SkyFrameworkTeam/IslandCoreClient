@@ -55,12 +55,4 @@ public final class ClientConnectionState {
 			status = Status.UNSUPPORTED;
 		}
 	}
-
-	// DEBUG - quitar cuando haya snapshot real: forceConnectedDebug() (see DebugSimulationHelpers)
-	// always answers with isOperator=false, since a real handshake would set both fields
-	// together. Admin-tab testing (Block C) needs operator toggled independently and repeatedly
-	// without re-running the whole handshake, hence this separate flip.
-	public static void toggleOperatorDebug() {
-		operator = !operator;
-	}
 }

@@ -42,3 +42,7 @@ hs_err_*.log
 replay_*.log
 *.hprof
 *.jfr
+
+# manual runClient/runServer test logs (see /run skill sessions)
+
+*_console.log

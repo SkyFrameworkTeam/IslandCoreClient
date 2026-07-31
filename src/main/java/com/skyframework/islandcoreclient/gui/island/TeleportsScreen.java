@@ -1,9 +1,15 @@
 package com.skyframework.islandcoreclient.gui.island;
 
 import com.skyframework.islandcoreclient.gui.common.BaseMenuScreen;
+import com.skyframework.islandcoreclient.network.ClientErrorToasts;
+import com.skyframework.islandcoreclient.network.PendingActionTracker;
+import com.skyframework.islandcoreclient.network.teleport.TeleportRequestC2S;
+import com.skyframework.islandcoreclient.network.teleport.TeleportStatusRequestC2S;
 import com.skyframework.islandcoreclient.state.ClientIslandCache;
 import com.skyframework.islandcoreclient.state.ClientTeleportState;
 import com.skyframework.islandcoreclient.state.ClientTeleportType;
+
+import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
@@ -23,6 +29,8 @@ public class TeleportsScreen extends BaseMenuScreen {
 
 	@Override
 	protected void initContent() {
+		ClientPlayNetworking.send(new TeleportStatusRequestC2S());
+
 		int y = TOP_BAR_HEIGHT + 8;
 		int buttonX = this.width - 16 - BUTTON_WIDTH;
 
@@ -78,9 +86,17 @@ public class TeleportsScreen extends BaseMenuScreen {
 	}
 
 	// Closes immediately per design: the screen must not block player movement while the
-	// (simulated) teleport resolves.
+	// teleport resolves server-side. HOME/SPAWN/FARMING's warmup progress and completion are
+	// communicated via chat messages from TeleportManagerImpl, not this screen — only an
+	// immediate rejection (wrong dimension, disabled, cooldown, etc.) surfaces here, as a toast,
+	// since by the time it arrives the screen is usually already closed.
 	private void onTeleportClicked(ClientTeleportType type) {
-		ClientIslandCache.simulateTeleportRequest(type);
+		ClientPlayNetworking.send(new TeleportRequestC2S(TeleportRequestC2S.Type.valueOf(type.name())));
+		PendingActionTracker.await((success, reasonKey) -> {
+			if (!success) {
+				ClientErrorToasts.showReason(reasonKey);
+			}
+		});
 		this.close();
 	}
 }

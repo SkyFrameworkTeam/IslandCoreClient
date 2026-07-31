@@ -1,5 +1,9 @@
 package com.skyframework.islandcoreclient.state;
 
+import com.skyframework.islandcoreclient.network.biome.BiomeTiersS2C;
+import com.skyframework.islandcoreclient.network.island.IslandSnapshotS2C;
+import com.skyframework.islandcoreclient.network.teleport.TeleportStatusS2C;
+
 import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.HashMap;
@@ -8,77 +12,72 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.network.ClientPlayerEntity;
 import net.minecraft.text.Text;
 import net.minecraft.util.math.BlockPos;
 
 import org.jetbrains.annotations.Nullable;
 
 public final class ClientIslandCache {
-	// Simulated Sprint 2 / Block A data: the server doesn't implement an island snapshot packet
-	// yet. Replace with the real IslandSnapshotS2C contents once that lands.
+	// The 3 settings IslandCore currently supports; IslandSnapshotS2C.SettingEntry#key carries the
+	// server's IslandSetting enum CONSTANT NAME (e.g. "FIRE_SPREAD"), while IslandSettingsUpdateC2S
+	// expects IslandSetting#getId() ("firespread") — this maps between the two, same ids
+	// IslandCommand's settings argument and this list's own keys already used before real network
+	// existed.
+	private static final Map<String, String> SETTING_ENUM_NAME_TO_ID = Map.of(
+			"FIRE_SPREAD", "firespread",
+			"PVP_DAMAGE", "pvp",
+			"MOB_DAMAGE", "mobdamage"
+	);
+
 	private static final List<ClientIslandSettingView> SETTINGS = List.of(
 			new ClientIslandSettingView("firespread", Text.translatable("islandcoreclient.settings.firespread"), false),
 			new ClientIslandSettingView("pvp", Text.translatable("islandcoreclient.settings.pvp"), false),
 			new ClientIslandSettingView("mobdamage", Text.translatable("islandcoreclient.settings.mobdamage"), false)
 	);
 
-	private static volatile boolean owner = true;
-	// True by default so the already-tested Blocks A/B behavior (Dashboard fully lit up) doesn't
-	// change unless something explicitly flips this, e.g. the [DEBUG] toggle.
-	private static volatile boolean hasIsland = true;
+	// The snapshot protocol only ever describes the requesting player's OWN island (the server
+	// resolves it via getIslandByOwner(player)) — there is no network query yet for an island the
+	// player is merely a TRUSTED/MEMBER of, so "owner" is always true whenever exists == true.
+	private static volatile boolean owner = false;
+	private static volatile boolean hasIsland = false;
 
-	private static volatile int size = 45;
-	private static final int MAX_SIZE = 60;
-	private static final String ISLAND_TYPE = "PLAINS";
-	private static final boolean HOME_SET = true;
-	private static final String ISLAND_STATE = "ACTIVE";
-	private static final int HOME_COOLDOWN_SECONDS = 600;
+	private static volatile int size = 0;
+	private static volatile int maxSize = 0;
+	// IslandType id (server-side always "plains" for now) — a distinct, mostly-unused concept
+	// from the current biome; do not confuse with BiomeScreen's currentBiomeId below.
+	private static volatile String islandType = "";
+	private static volatile boolean homeSet = false;
+	private static volatile String islandState = "";
 
-	private static final List<ClientMemberView> MEMBERS = new ArrayList<>(List.of(
-			new ClientMemberView(currentPlayerUuid(), currentPlayerName(), ClientMemberView.Role.OWNER),
-			new ClientMemberView(UUID.randomUUID(), "Fulanito", ClientMemberView.Role.MEMBER),
-			new ClientMemberView(UUID.randomUUID(), "Menganita", ClientMemberView.Role.TRUSTED)
-	));
+	private static final List<ClientMemberView> MEMBERS = new ArrayList<>();
+	private static final List<ClientPendingInviteView> PENDING_INVITES = new ArrayList<>();
 
-	private static final int DEFAULT_INVITE_EXPIRY_SECONDS = 300;
-	private static final List<ClientPendingInviteView> PENDING_INVITES =
-			new ArrayList<>(List.of(new ClientPendingInviteView("Zutanito", DEFAULT_INVITE_EXPIRY_SECONDS)));
-
+	// No IslandSnapshotS2C field (nor any other packet) carries incoming invites (invites where
+	// the local player is the target, not the island owner) — this stays local-only/simulated,
+	// see DebugSimulationHelpers#toggleIncomingInviteDebug.
 	@Nullable
 	private static volatile ClientIncomingInviteView incomingInvite = null;
 
-	private static final List<ClientBiomeTierView> BIOME_TIERS = List.of(
-			new ClientBiomeTierView("base", null, true, List.of(
-					new ClientBiomeView("minecraft:plains", Text.translatable("islandcoreclient.biome.plains")),
-					new ClientBiomeView("minecraft:desert", Text.translatable("islandcoreclient.biome.desert")),
-					new ClientBiomeView("minecraft:forest", Text.translatable("islandcoreclient.biome.forest"))
-			)),
-			new ClientBiomeTierView("adventurer", Text.translatable("islandcoreclient.biome.tier.adventurer.permission"), false, List.of(
-					new ClientBiomeView("minecraft:swamp", Text.translatable("islandcoreclient.biome.swamp")),
-					new ClientBiomeView("minecraft:jungle", Text.translatable("islandcoreclient.biome.jungle"))
-			)),
-			new ClientBiomeTierView("legendary", Text.translatable("islandcoreclient.biome.tier.legendary.permission"), false, List.of(
-					new ClientBiomeView("minecraft:cherry_grove", Text.translatable("islandcoreclient.biome.cherry_grove")),
-					new ClientBiomeView("minecraft:lush_caves", Text.translatable("islandcoreclient.biome.lush_caves"))
-			))
-	);
+	private static volatile List<ClientBiomeTierView> biomeTiers = List.of();
 
-	private static volatile String currentBiomeId = "minecraft:plains";
-	// Absolute deadline rather than a per-tick countdown, same reasoning as pending invites.
+	// No packet exposes "what biome is the island currently in" or "how many seconds are left on
+	// the biome-change cooldown" either — both stay local/optimistic, set only from the outcome of
+	// a change the player themselves just made this session. See BiomeScreen wiring notes.
+	@Nullable
+	private static volatile String currentBiomeId = null;
 	private static volatile long biomeCooldownEndMillis = 0L;
 
-	private static final long TELEPORT_REQUEST_COOLDOWN_SECONDS = 600L;
-	private static final Map<ClientTeleportType, ClientTeleportState> TELEPORT_STATES = new EnumMap<>(Map.of(
-			ClientTeleportType.HOME, new ClientTeleportState(true, 0L, null),
-			ClientTeleportType.SPAWN, new ClientTeleportState(true, 200L, null),
-			ClientTeleportType.RTP, new ClientTeleportState(false, 0L, "islandcoreclient.error.rtp_disabled_dimension"),
-			ClientTeleportType.FARMING, new ClientTeleportState(false, 0L, "islandcoreclient.error.farming_disabled_config")
-	));
+	private static final Map<ClientTeleportType, ClientTeleportState> TELEPORT_STATES = new EnumMap<>(ClientTeleportType.class);
 
-	// Block C (Admin tab) simulated fixture data. Populated once at class init, same style as
-	// the rest of this file.
+	static {
+		for (ClientTeleportType type : ClientTeleportType.values()) {
+			// Disabled/no-cooldown until the first real TeleportStatusS2C arrives.
+			TELEPORT_STATES.put(type, new ClientTeleportState(false, 0L, null));
+		}
+	}
+
+	// Block C (Admin tab) simulated fixture data — untouched, out of scope for this sprint
+	// (the admin/Dimension Manager/vanilla reset protocol doesn't exist on the server yet).
 	private static final List<ClientAdminIslandSummaryView> ADMIN_ISLANDS = new ArrayList<>(List.of(
 			new ClientAdminIslandSummaryView(UUID.randomUUID(), "Notch_Fan99", 60, 60, "PLAINS", "ACTIVE", 3),
 			new ClientAdminIslandSummaryView(UUID.randomUUID(), "Steve123", 30, 45, "DESERT", "ACTIVE", 1),
@@ -108,6 +107,84 @@ public final class ClientIslandCache {
 	private ClientIslandCache() {
 	}
 
+	// Replaces every real-data field below from a fresh IslandSnapshotS2C. Called on handshake
+	// connect and whenever a screen that needs fresh data opens or completes an action.
+	public static void applySnapshot(IslandSnapshotS2C snapshot) {
+		owner = snapshot.exists();
+		hasIsland = snapshot.exists();
+		size = snapshot.size();
+		maxSize = snapshot.maxSize();
+		islandType = snapshot.type();
+		homeSet = snapshot.home().isPresent();
+		islandState = snapshot.state();
+
+		MEMBERS.clear();
+		for (IslandSnapshotS2C.MemberEntry entry : snapshot.members()) {
+			MEMBERS.add(new ClientMemberView(entry.uuid(), entry.name(), ClientMemberView.Role.valueOf(entry.role())));
+		}
+
+		PENDING_INVITES.clear();
+		for (IslandSnapshotS2C.PendingInviteEntry entry : snapshot.pendingInvites()) {
+			PENDING_INVITES.add(new ClientPendingInviteView(entry.targetName(), entry.expiresInSeconds()));
+		}
+
+		for (IslandSnapshotS2C.SettingEntry entry : snapshot.settings()) {
+			String id = SETTING_ENUM_NAME_TO_ID.get(entry.key());
+			if (id != null) {
+				updateSetting(id, entry.value());
+			}
+		}
+	}
+
+	public static void applyTeleportStatus(TeleportStatusS2C status) {
+		applyTeleportStatusEntry(ClientTeleportType.HOME, status.home());
+		applyTeleportStatusEntry(ClientTeleportType.SPAWN, status.spawn());
+		applyTeleportStatusEntry(ClientTeleportType.RTP, status.rtp());
+		applyTeleportStatusEntry(ClientTeleportType.FARMING, status.farming());
+	}
+
+	private static void applyTeleportStatusEntry(ClientTeleportType type, TeleportStatusS2C.StatusEntry entry) {
+		// reasonKey from the server is a raw ActionReason id (e.g. "rtp_disabled"); pre-resolving
+		// it to a full translation key here means TeleportsScreen's existing
+		// Text.translatable(state.reasonKey()) call needs no change.
+		String translationKey = entry.reasonKey().map(reason -> "islandcoreclient.reason." + reason).orElse(null);
+		TELEPORT_STATES.put(type, new ClientTeleportState(entry.enabled(), entry.cooldownRemainingSeconds(), translationKey));
+	}
+
+	public static void applyBiomeTiers(BiomeTiersS2C tiers) {
+		List<ClientBiomeTierView> mapped = new ArrayList<>();
+		for (BiomeTiersS2C.TierEntry tier : tiers.tiers()) {
+			Text permissionLabel = tier.permissionRequired().isPresent()
+					? Text.translatable("islandcoreclient.biome.tier." + tier.tierId() + ".permission")
+					: null;
+
+			List<ClientBiomeView> biomes = new ArrayList<>();
+			for (BiomeTiersS2C.BiomeEntry biome : tier.biomes()) {
+				biomes.add(new ClientBiomeView(biome.biomeId(), localizedBiomeLabel(biome)));
+			}
+
+			mapped.add(new ClientBiomeTierView(tier.tierId(), permissionLabel, tier.unlocked(), biomes));
+		}
+		biomeTiers = List.copyOf(mapped);
+	}
+
+	// Prefer an existing Spanish translation for biomes IslandCoreClient already knows about
+	// (the ones in the default biome_tiers.json config); fall back to the server's generic
+	// English label (derived from the biome's Identifier path) for anything else, so a custom
+	// server config doesn't render a raw/untranslated key.
+	private static Text localizedBiomeLabel(BiomeTiersS2C.BiomeEntry biome) {
+		String path = biome.biomeId().contains(":") ? biome.biomeId().substring(biome.biomeId().indexOf(':') + 1) : biome.biomeId();
+		String translationKey = "islandcoreclient.biome." + path;
+		if (KNOWN_BIOME_LABEL_PATHS.contains(path)) {
+			return Text.translatable(translationKey);
+		}
+		return Text.literal(biome.label());
+	}
+
+	private static final java.util.Set<String> KNOWN_BIOME_LABEL_PATHS = java.util.Set.of(
+			"plains", "desert", "forest", "swamp", "jungle", "cherry_grove", "lush_caves"
+	);
+
 	public static List<ClientIslandSettingView> getSettings() {
 		return SETTINGS;
 	}
@@ -118,10 +195,6 @@ public final class ClientIslandCache {
 
 	public static boolean hasIsland() {
 		return hasIsland;
-	}
-
-	public static void setHasIsland(boolean value) {
-		hasIsland = value;
 	}
 
 	public static void updateSetting(String key, boolean value) {
@@ -138,27 +211,23 @@ public final class ClientIslandCache {
 	}
 
 	public static int getMaxSize() {
-		return MAX_SIZE;
+		return maxSize;
 	}
 
 	public static String getIslandType() {
-		return ISLAND_TYPE;
+		return islandType;
 	}
 
 	public static boolean isHomeSet() {
-		return HOME_SET;
+		return homeSet;
 	}
 
 	public static String getState() {
-		return ISLAND_STATE;
+		return islandState;
 	}
 
-	public static int getHomeCooldownSeconds() {
-		return HOME_COOLDOWN_SECONDS;
-	}
-
-	public static void upgradeIslandSize() {
-		size = MAX_SIZE;
+	public static void setSize(int value) {
+		size = value;
 	}
 
 	public static List<ClientMemberView> getMembers() {
@@ -184,7 +253,7 @@ public final class ClientIslandCache {
 	}
 
 	public static void addPendingInvite(String targetName) {
-		PENDING_INVITES.add(new ClientPendingInviteView(targetName, DEFAULT_INVITE_EXPIRY_SECONDS));
+		PENDING_INVITES.add(new ClientPendingInviteView(targetName, 300));
 	}
 
 	@Nullable
@@ -197,9 +266,10 @@ public final class ClientIslandCache {
 	}
 
 	public static List<ClientBiomeTierView> getBiomeTiers() {
-		return BIOME_TIERS;
+		return biomeTiers;
 	}
 
+	@Nullable
 	public static String getCurrentBiomeId() {
 		return currentBiomeId;
 	}
@@ -222,16 +292,6 @@ public final class ClientIslandCache {
 
 	public static ClientTeleportState getTeleportState(ClientTeleportType type) {
 		return TELEPORT_STATES.get(type);
-	}
-
-	// TODO: replace with sending TeleportRequestC2S and awaiting ActionResultS2C once IslandCore
-	// implements the teleport protocol. TeleportsScreen should not need to change when that
-	// happens.
-	public static void simulateTeleportRequest(ClientTeleportType type) {
-		ClientTeleportState state = TELEPORT_STATES.get(type);
-		if (state != null) {
-			state.startCooldown(TELEPORT_REQUEST_COOLDOWN_SECONDS);
-		}
 	}
 
 	public static List<ClientAdminIslandSummaryView> getAdminIslands() {
@@ -310,15 +370,5 @@ public final class ClientIslandCache {
 			gridIndex++;
 		}
 		return details;
-	}
-
-	private static UUID currentPlayerUuid() {
-		ClientPlayerEntity player = MinecraftClient.getInstance().player;
-		return player != null ? player.getUuid() : UUID.randomUUID();
-	}
-
-	private static String currentPlayerName() {
-		ClientPlayerEntity player = MinecraftClient.getInstance().player;
-		return player != null ? player.getGameProfile().getName() : "Tú";
 	}
 }

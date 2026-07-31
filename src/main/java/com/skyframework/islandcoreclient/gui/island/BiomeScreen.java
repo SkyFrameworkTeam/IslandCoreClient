@@ -1,9 +1,15 @@
 package com.skyframework.islandcoreclient.gui.island;
 
 import com.skyframework.islandcoreclient.gui.common.BaseMenuScreen;
+import com.skyframework.islandcoreclient.network.ClientErrorToasts;
+import com.skyframework.islandcoreclient.network.PendingActionTracker;
+import com.skyframework.islandcoreclient.network.biome.BiomeTiersRequestC2S;
+import com.skyframework.islandcoreclient.network.island.IslandBiomeChangeC2S;
 import com.skyframework.islandcoreclient.state.ClientBiomeTierView;
 import com.skyframework.islandcoreclient.state.ClientBiomeView;
 import com.skyframework.islandcoreclient.state.ClientIslandCache;
+
+import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.ConfirmScreen;
@@ -14,7 +20,11 @@ import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
 
 public class BiomeScreen extends BaseMenuScreen {
-	// The real cooldown after any biome change; also what the [DEBUG] Cooldown button applies.
+	// Neither IslandSnapshotS2C nor BiomeTiersS2C exposes the island's current biome-change
+	// cooldown remaining, or which biome is currently applied — see ClientIslandCache's notes.
+	// This local constant is only the fallback used to start an optimistic cooldown after a
+	// change THIS client just made; it does not reflect server truth on relog (matches
+	// IslandActionService's own default of 7 days, DEFAULT_BIOME_COOLDOWN_SECONDS server-side).
 	private static final long BIOME_CHANGE_COOLDOWN_SECONDS = 604800L;
 
 	private static final int CONTENT_X = 16;
@@ -30,6 +40,8 @@ public class BiomeScreen extends BaseMenuScreen {
 
 	@Override
 	protected void initContent() {
+		ClientPlayNetworking.send(new BiomeTiersRequestC2S());
+
 		boolean cooldownActive = ClientIslandCache.getBiomeCooldownRemainingSeconds() > 0;
 		String currentBiomeId = ClientIslandCache.getCurrentBiomeId();
 
@@ -80,7 +92,7 @@ public class BiomeScreen extends BaseMenuScreen {
 		this.client.setScreen(new ConfirmScreen(
 				confirmed -> {
 					if (confirmed) {
-						simulateBiomeChange(biome.biomeId());
+						requestBiomeChange(biome.biomeId());
 					}
 					this.client.setScreen(this);
 				},
@@ -88,12 +100,19 @@ public class BiomeScreen extends BaseMenuScreen {
 				Text.translatable("islandcoreclient.biome.confirm_message", biome.label())));
 	}
 
-	// TODO: replace with sending IslandBiomeChangeC2S and awaiting ActionResultS2C once
-	// IslandCore implements the biome protocol. The confirm dialog and tier/button layout above
-	// should not need to change when that happens.
-	private static void simulateBiomeChange(String biomeId) {
-		ClientIslandCache.setCurrentBiomeId(biomeId);
-		ClientIslandCache.startBiomeCooldown(BIOME_CHANGE_COOLDOWN_SECONDS);
+	private void requestBiomeChange(String biomeId) {
+		ClientPlayNetworking.send(new IslandBiomeChangeC2S(biomeId));
+		PendingActionTracker.await((success, reasonKey) -> {
+			if (success) {
+				// Optimistic only — see the class-level note on BIOME_CHANGE_COOLDOWN_SECONDS,
+				// neither field has a real server source yet.
+				ClientIslandCache.setCurrentBiomeId(biomeId);
+				ClientIslandCache.startBiomeCooldown(BIOME_CHANGE_COOLDOWN_SECONDS);
+			} else {
+				ClientErrorToasts.showReason(reasonKey);
+			}
+			this.clearAndInit();
+		});
 	}
 
 	private static String formatCooldown(long totalSeconds) {

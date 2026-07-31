@@ -1,6 +1,12 @@
 package com.skyframework.islandcoreclient.gui.island;
 
 import com.skyframework.islandcoreclient.gui.common.BaseMenuScreen;
+import com.skyframework.islandcoreclient.network.ClientErrorToasts;
+import com.skyframework.islandcoreclient.network.PendingActionTracker;
+import com.skyframework.islandcoreclient.network.island.IslandDeleteConfirmC2S;
+import com.skyframework.islandcoreclient.network.island.IslandDeleteRequestC2S;
+
+import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.ConfirmScreen;
@@ -10,13 +16,17 @@ import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
 
 /**
- * Three-layer delete flow, all client-local for now (see the TODOs below):
- * 1. "Solicitar eliminación" -&gt; vanilla {@link ConfirmScreen} (cancel = no-op).
- * 2. Confirming opens a 30s local window showing "Confirmar eliminación"; letting it expire
- *    silently falls back to the initial state (checked every frame in {@link #renderContent}).
- * 3. Confirming that closes the screen. There is no "island deleted" state anywhere yet in
- *    ClientIslandCache, so this block stops at closing the screen — see the TODO on
- *    {@link #simulateIslandDeleteConfirm()}.
+ * Three-layer delete flow:
+ * 1. "Solicitar eliminación" -&gt; vanilla {@link ConfirmScreen} (cancel = no-op) -&gt; real
+ *    {@link IslandDeleteRequestC2S}.
+ * 2. On success, opens a 30s LOCAL window mirroring IslandDeletionServiceImpl's own 30s server
+ *    window (REQUEST_TIMEOUT) showing "Confirmar eliminación"; letting it expire silently falls
+ *    back to the initial state (checked every frame in {@link #renderContent}). This countdown
+ *    is client-tracked, not server-pushed: PendingConfirmationTickS2C exists server-side but
+ *    isn't wired to broadcast yet, so there is no live tick to follow — if it drifts from the
+ *    real server deadline, IslandDeleteConfirmC2S will simply come back with NO_PENDING_DELETION
+ *    and the failure path below handles that like any other rejection.
+ * 3. Confirming sends real {@link IslandDeleteConfirmC2S} and closes the screen on success.
  */
 public class DeleteIslandScreen extends BaseMenuScreen {
 	private static final long PENDING_DELETION_WINDOW_SECONDS = 30L;
@@ -79,7 +89,7 @@ public class DeleteIslandScreen extends BaseMenuScreen {
 		this.client.setScreen(new ConfirmScreen(
 				confirmed -> {
 					if (confirmed) {
-						simulateIslandDeleteRequest();
+						requestIslandDelete();
 					}
 					this.client.setScreen(this);
 				},
@@ -88,22 +98,28 @@ public class DeleteIslandScreen extends BaseMenuScreen {
 	}
 
 	private void onConfirmClicked() {
-		simulateIslandDeleteConfirm();
-		this.close();
+		ClientPlayNetworking.send(new IslandDeleteConfirmC2S());
+		PendingActionTracker.await((success, reasonKey) -> {
+			pendingDeletionExpiresAtMillis = 0L;
+			if (!success) {
+				ClientErrorToasts.showReason(reasonKey);
+			}
+			// ClientIslandCache has no "island deleted" state yet (nothing in Blocks A/B
+			// introduced one) — the Dashboard picks up the real post-delete state (exists=false)
+			// on its own next snapshot refresh when the player returns to it.
+			this.close();
+		});
 	}
 
-	// TODO: replace with sending IslandDeleteRequestC2S once IslandCore implements the island
-	// deletion protocol; the server should own the 30s confirmation window instead of the
-	// client, since a client-only timer can't be trusted (crash/relog would silently reset it).
-	private void simulateIslandDeleteRequest() {
-		pendingDeletionExpiresAtMillis = System.currentTimeMillis() + PENDING_DELETION_WINDOW_SECONDS * 1000L;
-	}
-
-	// TODO: replace with sending IslandDeleteConfirmC2S and awaiting ActionResultS2C once
-	// IslandCore implements the island deletion protocol. ClientIslandCache has no "island
-	// deleted" state yet (nothing in Blocks A/B introduced one), so this only resets the pending
-	// window and closes the screen rather than faking a deleted-island Dashboard.
-	private void simulateIslandDeleteConfirm() {
-		pendingDeletionExpiresAtMillis = 0L;
+	private void requestIslandDelete() {
+		ClientPlayNetworking.send(new IslandDeleteRequestC2S());
+		PendingActionTracker.await((success, reasonKey) -> {
+			if (success) {
+				pendingDeletionExpiresAtMillis = System.currentTimeMillis() + PENDING_DELETION_WINDOW_SECONDS * 1000L;
+			} else {
+				ClientErrorToasts.showReason(reasonKey);
+			}
+			this.clearAndInit();
+		});
 	}
 }
