@@ -13,6 +13,7 @@
 	"islandcoreclient.dashboard.limits_button": "Límites",
 	"islandcoreclient.dashboard.teleports_button": "Teletransportes",
 	"islandcoreclient.dashboard.delete_button": "Eliminar isla",
+	"islandcoreclient.dashboard.create_island_button": "Crear isla",
 	"islandcoreclient.dashboard.invite_accept": "Aceptar",
 	"islandcoreclient.dashboard.invite_ignore": "Ignorar",
 	"islandcoreclient.dashboard.invite_banner": "%s te ha invitado a su isla",

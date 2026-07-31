@@ -36,6 +36,8 @@ public class DashboardScreen extends BaseMenuScreen {
 	private ButtonWidget acceptInviteButton;
 	private ButtonWidget ignoreInviteButton;
 
+	private ButtonWidget createIslandButton;
+
 	public DashboardScreen() {
 		super(Text.literal("Dashboard"), null);
 	}
@@ -93,6 +95,12 @@ public class DashboardScreen extends BaseMenuScreen {
 				.dimensions(ignoreX, inviteButtonY, 66, 16)
 				.build());
 
+		this.createIslandButton = this.addDrawableChild(ButtonWidget.builder(
+						Text.translatable("islandcoreclient.dashboard.create_island_button"),
+						button -> onCreateIslandClicked())
+				.dimensions(this.width / 2 - 100, this.height - 116, 200, 20)
+				.build());
+
 		// DEBUG - quitar cuando haya snapshot real.
 		this.addDrawableChild(ButtonWidget.builder(
 						Text.literal("[DEBUG] Invitación"),
@@ -114,24 +122,34 @@ public class DashboardScreen extends BaseMenuScreen {
 						button -> DebugSimulationHelpers.toggleTeleportCooldownsDebug())
 				.dimensions(410, this.height - 20, 120, 16)
 				.build());
+		this.addDrawableChild(ButtonWidget.builder(
+						Text.literal("[DEBUG] Alternar sin isla"),
+						button -> DebugSimulationHelpers.toggleHasIslandDebug())
+				.dimensions(8, this.height - 40, 160, 16)
+				.build());
 	}
 
 	@Override
 	protected void renderContent(DrawContext context, int mouseX, int mouseY, float delta) {
 		boolean connected = ClientConnectionState.getStatus() == ClientConnectionState.Status.CONNECTED;
-		// Every island action only makes sense once the handshake actually connected.
+		boolean hasIsland = ClientIslandCache.hasIsland();
+		// Every island action only makes sense once the handshake actually connected; with no
+		// island yet they stay visible but dimmed rather than disappearing, per design.
 		this.settingsButton.visible = connected;
-		this.settingsButton.active = connected;
+		this.settingsButton.active = connected && hasIsland;
 		this.membersButton.visible = connected;
-		this.membersButton.active = connected;
+		this.membersButton.active = connected && hasIsland;
 		this.biomeButton.visible = connected;
-		this.biomeButton.active = connected;
+		this.biomeButton.active = connected && hasIsland;
 		this.limitsButton.visible = connected;
-		this.limitsButton.active = connected;
+		this.limitsButton.active = connected && hasIsland;
 		this.teleportsButton.visible = connected;
-		this.teleportsButton.active = connected;
+		this.teleportsButton.active = connected && hasIsland;
 		this.deleteIslandButton.visible = connected;
-		this.deleteIslandButton.active = connected;
+		this.deleteIslandButton.active = connected && hasIsland;
+
+		this.createIslandButton.visible = connected && !hasIsland;
+		this.createIslandButton.active = connected && !hasIsland;
 
 		ClientIncomingInviteView invite = ClientIslandCache.getIncomingInvite();
 		boolean hasInvite = connected && invite != null;
@@ -161,29 +179,45 @@ public class DashboardScreen extends BaseMenuScreen {
 
 		int x = 16;
 		int y = CONTENT_START_Y;
+		int primaryColor = hasIsland ? 0xFFFFFF : 0x777777;
+		int secondaryColor = hasIsland ? 0xDDDDDD : 0x777777;
 
 		context.drawTextWithShadow(this.textRenderer,
 				Text.translatable("islandcoreclient.dashboard.summary_size", ClientIslandCache.getSize(), ClientIslandCache.getMaxSize()),
-				x, y, 0xFFFFFF);
+				x, y, primaryColor);
 		y += LINE_HEIGHT;
 		context.drawTextWithShadow(this.textRenderer,
-				Text.translatable("islandcoreclient.dashboard.summary_type", ClientIslandCache.getIslandType()), x, y, 0xFFFFFF);
+				Text.translatable("islandcoreclient.dashboard.summary_type", ClientIslandCache.getIslandType()), x, y, primaryColor);
 		y += LINE_HEIGHT;
 		context.drawTextWithShadow(this.textRenderer,
-				Text.translatable("islandcoreclient.dashboard.summary_state", ClientIslandCache.getState()), x, y, 0xFFFFFF);
+				Text.translatable("islandcoreclient.dashboard.summary_state", ClientIslandCache.getState()), x, y, primaryColor);
 		y += LINE_HEIGHT;
 		Text homeText = ClientIslandCache.isHomeSet()
 				? Text.translatable("islandcoreclient.dashboard.summary_home_set")
 				: Text.translatable("islandcoreclient.dashboard.summary_home_not_set");
-		context.drawTextWithShadow(this.textRenderer, homeText, x, y, 0xFFFFFF);
+		context.drawTextWithShadow(this.textRenderer, homeText, x, y, primaryColor);
 		y += LINE_HEIGHT + 6;
 
-		context.drawTextWithShadow(this.textRenderer, Text.translatable("islandcoreclient.dashboard.members_heading"), x, y, 0xFFFFFF);
+		context.drawTextWithShadow(this.textRenderer, Text.translatable("islandcoreclient.dashboard.members_heading"), x, y, primaryColor);
 		y += LINE_HEIGHT;
 		for (ClientMemberView member : ClientIslandCache.getMembers()) {
-			Text line = Text.literal(member.name() + " ").append(member.role().label());
-			context.drawTextWithShadow(this.textRenderer, line, x, y, 0xDDDDDD);
+			// role().label() carries its own explicit color (GOLD/AQUA/GREEN), which would win
+			// over secondaryColor below and defeat the dimming — so skip it while hasIsland=false.
+			Text roleText = hasIsland ? member.role().label() : Text.literal(member.role().name());
+			Text line = Text.literal(member.name() + " ").append(roleText);
+			context.drawTextWithShadow(this.textRenderer, line, x, y, secondaryColor);
 			y += LINE_HEIGHT;
 		}
+	}
+
+	private void onCreateIslandClicked() {
+		simulateIslandCreate();
+		this.clearAndInit();
+	}
+
+	// TODO: replace with sending IslandCreateC2S and awaiting ActionResultS2C once IslandCore
+	// implements the island creation protocol.
+	private static void simulateIslandCreate() {
+		ClientIslandCache.setHasIsland(true);
 	}
 }

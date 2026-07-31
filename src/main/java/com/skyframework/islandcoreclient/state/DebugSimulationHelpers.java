@@ -20,6 +20,10 @@ public final class DebugSimulationHelpers {
 		ClientConnectionState.onServerHandshakeReceived(FAKE_PROTOCOL_VERSION, false);
 	}
 
+	public static void toggleHasIslandDebug() {
+		ClientIslandCache.setHasIsland(!ClientIslandCache.hasIsland());
+	}
+
 	public static void toggleIncomingInviteDebug() {
 		if (ClientIslandCache.getIncomingInvite() == null) {
 			ClientIslandCache.setIncomingInvite(new ClientIncomingInviteView("Peroten"));

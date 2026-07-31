@@ -13,6 +13,7 @@
 	"islandcoreclient.dashboard.limits_button": "Limits",
 	"islandcoreclient.dashboard.teleports_button": "Teleports",
 	"islandcoreclient.dashboard.delete_button": "Delete island",
+	"islandcoreclient.dashboard.create_island_button": "Create island",
 	"islandcoreclient.dashboard.invite_accept": "Accept",
 	"islandcoreclient.dashboard.invite_ignore": "Ignore",
 	"islandcoreclient.dashboard.invite_banner": "%s has invited you to their island",

@@ -22,6 +22,9 @@ public final class ClientIslandCache {
 	);
 
 	private static volatile boolean owner = true;
+	// True by default so the already-tested Blocks A/B behavior (Dashboard fully lit up) doesn't
+	// change unless something explicitly flips this, e.g. the [DEBUG] toggle.
+	private static volatile boolean hasIsland = true;
 
 	private static volatile int size = 45;
 	private static final int MAX_SIZE = 60;
@@ -80,6 +83,14 @@ public final class ClientIslandCache {
 
 	public static boolean isOwner() {
 		return owner;
+	}
+
+	public static boolean hasIsland() {
+		return hasIsland;
+	}
+
+	public static void setHasIsland(boolean value) {
+		hasIsland = value;
 	}
 
 	public static void updateSetting(String key, boolean value) {
