@@ -110,8 +110,15 @@ public final class ClientIslandCache {
 	// Replaces every real-data field below from a fresh IslandSnapshotS2C. Called on handshake
 	// connect and whenever a screen that needs fresh data opens or completes an action.
 	public static void applySnapshot(IslandSnapshotS2C snapshot) {
-		owner = snapshot.exists();
-		hasIsland = snapshot.exists();
+		// IslandDeletionServiceImpl#confirmDeletion doesn't remove the island from the registry
+		// synchronously — it marks it DELETING and only actually deletes it once the incremental
+		// block-clearing job finishes, ticks later. exists() stays true for that whole window, so
+		// treating a DELETING island as "no island" here (not just exists()) is what makes the
+		// Dashboard flip to the dimmed/"Crear isla" state right after a successful
+		// IslandDeleteConfirmC2S, instead of only once the block clearing eventually completes.
+		boolean deleting = "DELETING".equals(snapshot.state());
+		owner = snapshot.exists() && !deleting;
+		hasIsland = snapshot.exists() && !deleting;
 		size = snapshot.size();
 		maxSize = snapshot.maxSize();
 		islandType = snapshot.type();

@@ -1,5 +1,6 @@
 package com.skyframework.islandcoreclient.network;
 
+import com.skyframework.islandcoreclient.gui.island.TeleportsScreen;
 import com.skyframework.islandcoreclient.network.biome.BiomeTiersRequestC2S;
 import com.skyframework.islandcoreclient.network.biome.BiomeTiersS2C;
 import com.skyframework.islandcoreclient.network.handshake.ClientHandshakeC2S;
@@ -27,6 +28,8 @@ import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
 
+import net.minecraft.client.MinecraftClient;
+
 public final class ClientPacketHandlers {
 	private ClientPacketHandlers() {
 	}
@@ -45,8 +48,17 @@ public final class ClientPacketHandlers {
 		ClientPlayNetworking.registerGlobalReceiver(IslandSnapshotS2C.ID, (payload, context) ->
 				ClientIslandCache.applySnapshot(payload));
 
-		ClientPlayNetworking.registerGlobalReceiver(TeleportStatusS2C.ID, (payload, context) ->
-				ClientIslandCache.applyTeleportStatus(payload));
+		ClientPlayNetworking.registerGlobalReceiver(TeleportStatusS2C.ID, (payload, context) -> {
+			ClientIslandCache.applyTeleportStatus(payload);
+			// TeleportsScreen.initContent() sends the request but builds its buttons
+			// synchronously from whatever was already cached — on the very first visit this
+			// session that's the disabled-by-default placeholder, since this reply hasn't
+			// landed yet. Rebuild the screen once real data arrives so those buttons don't
+			// stay stuck inactive until the player leaves and reopens the screen.
+			if (MinecraftClient.getInstance().currentScreen instanceof TeleportsScreen screen) {
+				screen.refreshFromNetwork();
+			}
+		});
 
 		ClientPlayNetworking.registerGlobalReceiver(BiomeTiersS2C.ID, (payload, context) ->
 				ClientIslandCache.applyBiomeTiers(payload));

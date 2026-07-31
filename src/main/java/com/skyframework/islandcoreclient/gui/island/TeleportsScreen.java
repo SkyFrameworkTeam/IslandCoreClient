@@ -27,6 +27,12 @@ public class TeleportsScreen extends BaseMenuScreen {
 		super(Text.translatable("islandcoreclient.teleports.title"), parent);
 	}
 
+	// Called by ClientPacketHandlers when a fresh TeleportStatusS2C lands while this screen is
+	// open — Screen#clearAndInit() itself is protected, so this is the public door into it.
+	public void refreshFromNetwork() {
+		this.clearAndInit();
+	}
+
 	@Override
 	protected void initContent() {
 		ClientPlayNetworking.send(new TeleportStatusRequestC2S());

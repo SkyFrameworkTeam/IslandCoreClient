@@ -5,6 +5,7 @@ import com.skyframework.islandcoreclient.network.ClientErrorToasts;
 import com.skyframework.islandcoreclient.network.PendingActionTracker;
 import com.skyframework.islandcoreclient.network.island.IslandDeleteConfirmC2S;
 import com.skyframework.islandcoreclient.network.island.IslandDeleteRequestC2S;
+import com.skyframework.islandcoreclient.network.island.IslandSnapshotRequestC2S;
 
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 
@@ -101,12 +102,16 @@ public class DeleteIslandScreen extends BaseMenuScreen {
 		ClientPlayNetworking.send(new IslandDeleteConfirmC2S());
 		PendingActionTracker.await((success, reasonKey) -> {
 			pendingDeletionExpiresAtMillis = 0L;
-			if (!success) {
+			if (success) {
+				// Explicit, not just relying on close() -> DashboardScreen.initContent() firing
+				// one incidentally: confirmDeletion() only marks the island DELETING server-side
+				// (actual removal from the registry happens ticks later, once the block-clearing
+				// job finishes), so ClientIslandCache.applySnapshot treats a DELETING island as
+				// "no island" for the UI — this refetch is what lets the Dashboard pick that up.
+				ClientPlayNetworking.send(new IslandSnapshotRequestC2S());
+			} else {
 				ClientErrorToasts.showReason(reasonKey);
 			}
-			// ClientIslandCache has no "island deleted" state yet (nothing in Blocks A/B
-			// introduced one) — the Dashboard picks up the real post-delete state (exists=false)
-			// on its own next snapshot refresh when the player returns to it.
 			this.close();
 		});
 	}
