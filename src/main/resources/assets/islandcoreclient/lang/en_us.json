@@ -20,7 +20,7 @@
 	"islandcoreclient.dashboard.invite_ignore": "Ignore",
 	"islandcoreclient.dashboard.invite_banner": "%s has invited you to their island",
 	"islandcoreclient.dashboard.summary_size": "Size: %s/%s",
-	"islandcoreclient.dashboard.summary_type": "Type: %s",
+	"islandcoreclient.dashboard.summary_biome": "Biome: %s",
 	"islandcoreclient.dashboard.summary_state": "State: %s",
 	"islandcoreclient.dashboard.summary_home_set": "Home: set",
 	"islandcoreclient.dashboard.summary_home_not_set": "Home: not set",
@@ -51,6 +51,7 @@
 	"islandcoreclient.biome.jungle": "Jungle",
 	"islandcoreclient.biome.cherry_grove": "Cherry Grove",
 	"islandcoreclient.biome.lush_caves": "Lush Caves",
+	"islandcoreclient.biome.the_void": "The Void",
 
 	"islandcoreclient.limits.title": "Limits",
 	"islandcoreclient.limits.size_label": "Size: %s/%s",

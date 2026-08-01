@@ -281,7 +281,7 @@ public class DashboardScreen extends BaseMenuScreen {
 				x, y, primaryColor);
 		y += LINE_HEIGHT;
 		context.drawTextWithShadow(this.textRenderer,
-				Text.translatable("islandcoreclient.dashboard.summary_type", ClientIslandCache.getIslandType()), x, y, primaryColor);
+				Text.translatable("islandcoreclient.dashboard.summary_biome", currentBiomeLabel()), x, y, primaryColor);
 		y += LINE_HEIGHT;
 		context.drawTextWithShadow(this.textRenderer,
 				Text.translatable("islandcoreclient.dashboard.summary_state", ClientIslandCache.getState()), x, y, primaryColor);
@@ -302,6 +302,19 @@ public class DashboardScreen extends BaseMenuScreen {
 			context.drawTextWithShadow(this.textRenderer, line, x, y, secondaryColor);
 			y += LINE_HEIGHT;
 		}
+	}
+
+	// Real currentBiomeId from the snapshot, not islandType — that field is a distinct,
+	// almost-decorative server concept that's always "plains" and tells the player nothing
+	// useful. Falls back to the raw id if it's not one of the ones IslandCoreClient has its own
+	// translation for (a custom server biome_tiers.json config, or before the first snapshot
+	// ever arrives and currentBiomeId is still null).
+	private static Text currentBiomeLabel() {
+		String biomeId = ClientIslandCache.getCurrentBiomeId();
+		if (biomeId == null || biomeId.isEmpty()) {
+			return Text.literal("?");
+		}
+		return ClientIslandCache.getKnownBiomeLabel(biomeId).orElseGet(() -> Text.literal(biomeId));
 	}
 
 	private void onCreateIslandClicked() {

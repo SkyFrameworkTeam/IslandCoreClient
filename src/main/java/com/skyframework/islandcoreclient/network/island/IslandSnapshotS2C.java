@@ -14,15 +14,19 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
-// Mirrors the server's net.island.IslandSnapshotS2C exactly: same 10 fields in the same order,
+// Mirrors the server's net.island.IslandSnapshotS2C exactly: same 11 fields in the same order,
 // same hand-written PacketCodec.of (past PacketCodec.tuple's 6-argument limit), same nested
 // per-entry records/codecs. type is the island's IslandType id (server-side always "plains" for
 // now — a distinct, mostly-unused concept from the current biome, NOT what BiomeScreen changes).
+// currentBiomeId is the real current biome (e.g. "minecraft:jungle", or IslandData.DEFAULT_BIOME_ID
+// = "minecraft:the_void" for an island that's never had /island biome used on it) — this is what
+// BiomeScreen's "current" marker and Dashboard's summary line should read, not type.
 public record IslandSnapshotS2C(
 		boolean exists,
 		int size,
 		int maxSize,
 		String type,
+		String currentBiomeId,
 		Optional<BlockPos> home,
 		String state,
 		List<MemberEntry> members,
@@ -48,6 +52,7 @@ public record IslandSnapshotS2C(
 				PacketCodecs.VAR_INT.encode(buf, value.size());
 				PacketCodecs.VAR_INT.encode(buf, value.maxSize());
 				PacketCodecs.STRING.encode(buf, value.type());
+				PacketCodecs.STRING.encode(buf, value.currentBiomeId());
 				HOME_CODEC.encode(buf, value.home());
 				PacketCodecs.STRING.encode(buf, value.state());
 				MEMBER_LIST_CODEC.encode(buf, value.members());
@@ -59,6 +64,7 @@ public record IslandSnapshotS2C(
 					PacketCodecs.BOOL.decode(buf),
 					PacketCodecs.VAR_INT.decode(buf),
 					PacketCodecs.VAR_INT.decode(buf),
+					PacketCodecs.STRING.decode(buf),
 					PacketCodecs.STRING.decode(buf),
 					HOME_CODEC.decode(buf),
 					PacketCodecs.STRING.decode(buf),

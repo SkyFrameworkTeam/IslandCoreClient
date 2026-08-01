@@ -20,7 +20,7 @@
 	"islandcoreclient.dashboard.invite_ignore": "Ignorar",
 	"islandcoreclient.dashboard.invite_banner": "%s te ha invitado a su isla",
 	"islandcoreclient.dashboard.summary_size": "Tamaño: %s/%s",
-	"islandcoreclient.dashboard.summary_type": "Tipo: %s",
+	"islandcoreclient.dashboard.summary_biome": "Bioma: %s",
 	"islandcoreclient.dashboard.summary_state": "Estado: %s",
 	"islandcoreclient.dashboard.summary_home_set": "Home: fijado",
 	"islandcoreclient.dashboard.summary_home_not_set": "Home: sin fijar",
@@ -51,6 +51,7 @@
 	"islandcoreclient.biome.jungle": "Selva",
 	"islandcoreclient.biome.cherry_grove": "Arboleda de cerezos",
 	"islandcoreclient.biome.lush_caves": "Cuevas exuberantes",
+	"islandcoreclient.biome.the_void": "El Vacío",
 
 	"islandcoreclient.limits.title": "Límites",
 	"islandcoreclient.limits.size_label": "Tamaño: %s/%s",

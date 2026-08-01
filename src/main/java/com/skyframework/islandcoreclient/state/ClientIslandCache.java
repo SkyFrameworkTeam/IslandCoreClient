@@ -10,6 +10,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
 import net.minecraft.text.Text;
@@ -60,9 +61,12 @@ public final class ClientIslandCache {
 
 	private static volatile List<ClientBiomeTierView> biomeTiers = List.of();
 
-	// No packet exposes "what biome is the island currently in" or "how many seconds are left on
-	// the biome-change cooldown" either — both stay local/optimistic, set only from the outcome of
-	// a change the player themselves just made this session. See BiomeScreen wiring notes.
+	// currentBiomeId now comes from the real IslandSnapshotS2C (populated in applySnapshot below).
+	// BiomeScreen also writes it optimistically right after a successful biome-change request, for
+	// immediate feedback before the next snapshot reconciles it — see BiomeScreen wiring notes.
+	// No packet exposes the biome-change cooldown remaining, though: that field stays
+	// local/optimistic only, set from the outcome of a change the player themselves just made
+	// this session.
 	@Nullable
 	private static volatile String currentBiomeId = null;
 	private static volatile long biomeCooldownEndMillis = 0L;
@@ -122,6 +126,7 @@ public final class ClientIslandCache {
 		size = snapshot.size();
 		maxSize = snapshot.maxSize();
 		islandType = snapshot.type();
+		currentBiomeId = snapshot.currentBiomeId();
 		homeSet = snapshot.home().isPresent();
 		islandState = snapshot.state();
 
@@ -180,16 +185,24 @@ public final class ClientIslandCache {
 	// English label (derived from the biome's Identifier path) for anything else, so a custom
 	// server config doesn't render a raw/untranslated key.
 	private static Text localizedBiomeLabel(BiomeTiersS2C.BiomeEntry biome) {
-		String path = biome.biomeId().contains(":") ? biome.biomeId().substring(biome.biomeId().indexOf(':') + 1) : biome.biomeId();
-		String translationKey = "islandcoreclient.biome." + path;
-		if (KNOWN_BIOME_LABEL_PATHS.contains(path)) {
-			return Text.translatable(translationKey);
+		return getKnownBiomeLabel(biome.biomeId()).orElseGet(() -> Text.literal(biome.label()));
+	}
+
+	// Public: also used by DashboardScreen for the current-biome summary line, which has no
+	// BiomeTiersS2C.BiomeEntry (with its server-computed English fallback label) to work from —
+	// only the raw currentBiomeId string from IslandSnapshotS2C. Empty if this isn't one of the
+	// ids IslandCoreClient has its own translation for; callers fall back to something else (a
+	// server-provided label, or the raw id) in that case.
+	public static Optional<Text> getKnownBiomeLabel(String biomeId) {
+		String path = biomeId.contains(":") ? biomeId.substring(biomeId.indexOf(':') + 1) : biomeId;
+		if (!KNOWN_BIOME_LABEL_PATHS.contains(path)) {
+			return Optional.empty();
 		}
-		return Text.literal(biome.label());
+		return Optional.of(Text.translatable("islandcoreclient.biome." + path));
 	}
 
 	private static final java.util.Set<String> KNOWN_BIOME_LABEL_PATHS = java.util.Set.of(
-			"plains", "desert", "forest", "swamp", "jungle", "cherry_grove", "lush_caves"
+			"plains", "desert", "forest", "swamp", "jungle", "cherry_grove", "lush_caves", "the_void"
 	);
 
 	public static List<ClientIslandSettingView> getSettings() {
