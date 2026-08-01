@@ -38,6 +38,15 @@ public class BiomeScreen extends BaseMenuScreen {
 		super(Text.translatable("islandcoreclient.biome.title"), parent);
 	}
 
+	// Called by ClientPacketHandlers when a fresh BiomeTiersS2C lands while this screen is open —
+	// Screen#clearAndInit() itself is protected, so this is the public door into it. Same fix as
+	// TeleportsScreen#refreshFromNetwork: initContent() builds its buttons synchronously from
+	// whatever was already cached, which on the very first visit this session is the empty
+	// placeholder (this reply hasn't landed yet).
+	public void refreshFromNetwork() {
+		this.clearAndInit();
+	}
+
 	@Override
 	protected void initContent() {
 		ClientPlayNetworking.send(new BiomeTiersRequestC2S());

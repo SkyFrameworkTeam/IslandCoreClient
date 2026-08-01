@@ -1,5 +1,6 @@
 package com.skyframework.islandcoreclient.network;
 
+import com.skyframework.islandcoreclient.gui.island.BiomeScreen;
 import com.skyframework.islandcoreclient.gui.island.TeleportsScreen;
 import com.skyframework.islandcoreclient.network.biome.BiomeTiersRequestC2S;
 import com.skyframework.islandcoreclient.network.biome.BiomeTiersS2C;
@@ -60,8 +61,14 @@ public final class ClientPacketHandlers {
 			}
 		});
 
-		ClientPlayNetworking.registerGlobalReceiver(BiomeTiersS2C.ID, (payload, context) ->
-				ClientIslandCache.applyBiomeTiers(payload));
+		ClientPlayNetworking.registerGlobalReceiver(BiomeTiersS2C.ID, (payload, context) -> {
+			ClientIslandCache.applyBiomeTiers(payload);
+			// Same race as TeleportStatusS2C/TeleportsScreen above: rebuild the screen once real
+			// tier data arrives so it doesn't stay blank until the player leaves and reopens it.
+			if (MinecraftClient.getInstance().currentScreen instanceof BiomeScreen screen) {
+				screen.refreshFromNetwork();
+			}
+		});
 
 		ClientPlayNetworking.registerGlobalReceiver(ActionResultS2C.ID, (payload, context) ->
 				PendingActionTracker.onActionResult(payload));
