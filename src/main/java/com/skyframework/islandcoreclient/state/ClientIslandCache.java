@@ -201,8 +201,16 @@ public final class ClientIslandCache {
 		return Optional.of(Text.translatable("islandcoreclient.biome." + path));
 	}
 
+	// Every biome across all 3 tiers of the default biome_tiers.json (base/adventurer/legendary) —
+	// see BiomeTierRegistryImpl#writeDefault for the canonical list this mirrors.
 	private static final java.util.Set<String> KNOWN_BIOME_LABEL_PATHS = java.util.Set.of(
-			"plains", "desert", "forest", "swamp", "jungle", "cherry_grove", "lush_caves", "the_void"
+			// base
+			"plains", "desert", "dark_forest", "the_void", "forest", "savanna", "snowy_plains", "beach",
+			// adventurer
+			"swamp", "jungle", "badlands", "taiga", "snowy_taiga", "mushroom_fields", "ice_spikes",
+			// legendary
+			"cherry_grove", "mangrove_swamp", "lush_caves", "dripstone_caves", "deep_dark",
+			"warped_forest", "crimson_forest", "soul_sand_valley"
 	);
 
 	public static List<ClientIslandSettingView> getSettings() {
