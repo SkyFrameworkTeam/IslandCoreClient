@@ -91,11 +91,19 @@ public class TeleportsScreen extends BaseMenuScreen {
 		}
 	}
 
-	// Closes immediately per design: the screen must not block player movement while the
-	// teleport resolves server-side. HOME/SPAWN/FARMING's warmup progress and completion are
-	// communicated via chat messages from TeleportManagerImpl, not this screen — only an
-	// immediate rejection (wrong dimension, disabled, cooldown, etc.) surfaces here, as a toast,
-	// since by the time it arrives the screen is usually already closed.
+	// Closes the ENTIRE menu immediately per design (the player gets full control back, as if
+	// they'd never opened it) — not just this screen. this.close() is deliberately NOT used here:
+	// BaseMenuScreen overrides close() to always go to its parent (that's what powers the
+	// "← Volver" button), so calling it from here would just return to the Dashboard instead of
+	// releasing the screen entirely. client.setScreen(null) is vanilla Screen#close()'s own
+	// un-overridden behavior (confirmed via javap), gotten here directly since BaseMenuScreen's
+	// override sits between this class and it.
+	//
+	// The screen must not block player movement while the teleport resolves server-side.
+	// HOME/SPAWN/FARMING's warmup progress and completion are communicated via chat messages from
+	// TeleportManagerImpl, not this screen — only an immediate rejection (wrong dimension,
+	// disabled, cooldown, etc.) surfaces here, as a toast, since by the time it arrives the menu
+	// is usually already closed.
 	private void onTeleportClicked(ClientTeleportType type) {
 		ClientPlayNetworking.send(new TeleportRequestC2S(TeleportRequestC2S.Type.valueOf(type.name())));
 		PendingActionTracker.await((success, reasonKey) -> {
@@ -103,6 +111,6 @@ public class TeleportsScreen extends BaseMenuScreen {
 				ClientErrorToasts.showReason(reasonKey);
 			}
 		});
-		this.close();
+		this.client.setScreen(null);
 	}
 }
