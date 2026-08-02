@@ -1,7 +1,37 @@
 package com.skyframework.islandcoreclient.network;
 
+import com.skyframework.islandcoreclient.gui.admin.AdminIslandDetailScreen;
+import com.skyframework.islandcoreclient.gui.admin.AdminIslandListScreen;
+import com.skyframework.islandcoreclient.gui.admin.DimensionManagerScreen;
+import com.skyframework.islandcoreclient.gui.admin.SpawnManagerScreen;
+import com.skyframework.islandcoreclient.gui.admin.VanillaResetScreen;
 import com.skyframework.islandcoreclient.gui.island.BiomeScreen;
 import com.skyframework.islandcoreclient.gui.island.TeleportsScreen;
+import com.skyframework.islandcoreclient.network.admin.dimension.DimensionCreateC2S;
+import com.skyframework.islandcoreclient.network.admin.dimension.DimensionDeleteC2S;
+import com.skyframework.islandcoreclient.network.admin.dimension.DimensionDeleteConfirmC2S;
+import com.skyframework.islandcoreclient.network.admin.dimension.DimensionDetailRequestC2S;
+import com.skyframework.islandcoreclient.network.admin.dimension.DimensionDetailS2C;
+import com.skyframework.islandcoreclient.network.admin.dimension.DimensionListRequestC2S;
+import com.skyframework.islandcoreclient.network.admin.dimension.DimensionListS2C;
+import com.skyframework.islandcoreclient.network.admin.dimension.DimensionRegenerateC2S;
+import com.skyframework.islandcoreclient.network.admin.dimension.DimensionRegenerateConfirmC2S;
+import com.skyframework.islandcoreclient.network.admin.island.AdminIslandDeleteC2S;
+import com.skyframework.islandcoreclient.network.admin.island.AdminIslandDeleteConfirmC2S;
+import com.skyframework.islandcoreclient.network.admin.island.AdminIslandDetailRequestC2S;
+import com.skyframework.islandcoreclient.network.admin.island.AdminIslandDetailS2C;
+import com.skyframework.islandcoreclient.network.admin.island.AdminIslandListRequestC2S;
+import com.skyframework.islandcoreclient.network.admin.island.AdminIslandListS2C;
+import com.skyframework.islandcoreclient.network.admin.spawn.SpawnIslandCreateC2S;
+import com.skyframework.islandcoreclient.network.admin.spawn.SpawnIslandResizeC2S;
+import com.skyframework.islandcoreclient.network.admin.spawn.SpawnIslandSetHomeC2S;
+import com.skyframework.islandcoreclient.network.admin.spawn.SpawnStatusRequestC2S;
+import com.skyframework.islandcoreclient.network.admin.spawn.SpawnStatusS2C;
+import com.skyframework.islandcoreclient.network.admin.vanilla.VanillaResetCancelC2S;
+import com.skyframework.islandcoreclient.network.admin.vanilla.VanillaResetConfirmC2S;
+import com.skyframework.islandcoreclient.network.admin.vanilla.VanillaResetListRequestC2S;
+import com.skyframework.islandcoreclient.network.admin.vanilla.VanillaResetListS2C;
+import com.skyframework.islandcoreclient.network.admin.vanilla.VanillaResetQueueC2S;
 import com.skyframework.islandcoreclient.network.biome.BiomeTiersRequestC2S;
 import com.skyframework.islandcoreclient.network.biome.BiomeTiersS2C;
 import com.skyframework.islandcoreclient.network.handshake.ClientHandshakeC2S;
@@ -73,6 +103,8 @@ public final class ClientPacketHandlers {
 		ClientPlayNetworking.registerGlobalReceiver(ActionResultS2C.ID, (payload, context) ->
 				PendingActionTracker.onActionResult(payload));
 
+		registerAdminHandlers();
+
 		// The server may not implement this protocol at all (e.g. IslandCore hasn't shipped its
 		// networking yet): sending is safe regardless, the packet is simply dropped if unhandled.
 		ClientPlayConnectionEvents.JOIN.register((handler, sender, client) -> {
@@ -118,5 +150,82 @@ public final class ClientPacketHandlers {
 
 		PayloadTypeRegistry.playC2S().register(BiomeTiersRequestC2S.ID, BiomeTiersRequestC2S.CODEC);
 		PayloadTypeRegistry.playS2C().register(BiomeTiersS2C.ID, BiomeTiersS2C.CODEC);
+
+		PayloadTypeRegistry.playC2S().register(AdminIslandListRequestC2S.ID, AdminIslandListRequestC2S.CODEC);
+		PayloadTypeRegistry.playS2C().register(AdminIslandListS2C.ID, AdminIslandListS2C.CODEC);
+		PayloadTypeRegistry.playC2S().register(AdminIslandDetailRequestC2S.ID, AdminIslandDetailRequestC2S.CODEC);
+		PayloadTypeRegistry.playS2C().register(AdminIslandDetailS2C.ID, AdminIslandDetailS2C.CODEC);
+		PayloadTypeRegistry.playC2S().register(AdminIslandDeleteC2S.ID, AdminIslandDeleteC2S.CODEC);
+		PayloadTypeRegistry.playC2S().register(AdminIslandDeleteConfirmC2S.ID, AdminIslandDeleteConfirmC2S.CODEC);
+
+		PayloadTypeRegistry.playC2S().register(SpawnStatusRequestC2S.ID, SpawnStatusRequestC2S.CODEC);
+		PayloadTypeRegistry.playS2C().register(SpawnStatusS2C.ID, SpawnStatusS2C.CODEC);
+		PayloadTypeRegistry.playC2S().register(SpawnIslandCreateC2S.ID, SpawnIslandCreateC2S.CODEC);
+		PayloadTypeRegistry.playC2S().register(SpawnIslandResizeC2S.ID, SpawnIslandResizeC2S.CODEC);
+		PayloadTypeRegistry.playC2S().register(SpawnIslandSetHomeC2S.ID, SpawnIslandSetHomeC2S.CODEC);
+
+		PayloadTypeRegistry.playC2S().register(DimensionListRequestC2S.ID, DimensionListRequestC2S.CODEC);
+		PayloadTypeRegistry.playS2C().register(DimensionListS2C.ID, DimensionListS2C.CODEC);
+		PayloadTypeRegistry.playC2S().register(DimensionDetailRequestC2S.ID, DimensionDetailRequestC2S.CODEC);
+		PayloadTypeRegistry.playS2C().register(DimensionDetailS2C.ID, DimensionDetailS2C.CODEC);
+		PayloadTypeRegistry.playC2S().register(DimensionCreateC2S.ID, DimensionCreateC2S.CODEC);
+		PayloadTypeRegistry.playC2S().register(DimensionDeleteC2S.ID, DimensionDeleteC2S.CODEC);
+		PayloadTypeRegistry.playC2S().register(DimensionDeleteConfirmC2S.ID, DimensionDeleteConfirmC2S.CODEC);
+		PayloadTypeRegistry.playC2S().register(DimensionRegenerateC2S.ID, DimensionRegenerateC2S.CODEC);
+		PayloadTypeRegistry.playC2S().register(DimensionRegenerateConfirmC2S.ID, DimensionRegenerateConfirmC2S.CODEC);
+
+		PayloadTypeRegistry.playC2S().register(VanillaResetListRequestC2S.ID, VanillaResetListRequestC2S.CODEC);
+		PayloadTypeRegistry.playS2C().register(VanillaResetListS2C.ID, VanillaResetListS2C.CODEC);
+		PayloadTypeRegistry.playC2S().register(VanillaResetQueueC2S.ID, VanillaResetQueueC2S.CODEC);
+		PayloadTypeRegistry.playC2S().register(VanillaResetConfirmC2S.ID, VanillaResetConfirmC2S.CODEC);
+		PayloadTypeRegistry.playC2S().register(VanillaResetCancelC2S.ID, VanillaResetCancelC2S.CODEC);
+	}
+
+	// Admin network block: each S2C handler applies the real data to ClientIslandCache, then
+	// rebuilds the currently open screen if it's the one waiting on that exact reply — same
+	// TeleportStatusS2C/BiomeTiersS2C race-avoidance pattern used above, applied to all 5 new
+	// screens from the start instead of shipping them with the same blank-on-first-visit bug.
+	private static void registerAdminHandlers() {
+		ClientPlayNetworking.registerGlobalReceiver(AdminIslandListS2C.ID, (payload, context) -> {
+			ClientIslandCache.applyAdminIslandList(payload);
+			if (MinecraftClient.getInstance().currentScreen instanceof AdminIslandListScreen screen) {
+				screen.refreshFromNetwork();
+			}
+		});
+
+		ClientPlayNetworking.registerGlobalReceiver(AdminIslandDetailS2C.ID, (payload, context) -> {
+			ClientIslandCache.applyAdminIslandDetail(payload);
+			if (MinecraftClient.getInstance().currentScreen instanceof AdminIslandDetailScreen screen) {
+				screen.refreshFromNetwork();
+			}
+		});
+
+		ClientPlayNetworking.registerGlobalReceiver(SpawnStatusS2C.ID, (payload, context) -> {
+			ClientIslandCache.applySpawnStatus(payload);
+			if (MinecraftClient.getInstance().currentScreen instanceof SpawnManagerScreen screen) {
+				screen.refreshFromNetwork();
+			}
+		});
+
+		ClientPlayNetworking.registerGlobalReceiver(DimensionListS2C.ID, (payload, context) -> {
+			ClientIslandCache.applyDimensionList(payload);
+			if (MinecraftClient.getInstance().currentScreen instanceof DimensionManagerScreen screen) {
+				screen.refreshFromNetwork();
+			}
+		});
+
+		ClientPlayNetworking.registerGlobalReceiver(DimensionDetailS2C.ID, (payload, context) -> {
+			ClientIslandCache.applyDimensionDetail(payload);
+			if (MinecraftClient.getInstance().currentScreen instanceof DimensionManagerScreen screen) {
+				screen.refreshFromNetwork();
+			}
+		});
+
+		ClientPlayNetworking.registerGlobalReceiver(VanillaResetListS2C.ID, (payload, context) -> {
+			ClientIslandCache.applyVanillaResetList(payload);
+			if (MinecraftClient.getInstance().currentScreen instanceof VanillaResetScreen screen) {
+				screen.refreshFromNetwork();
+			}
+		});
 	}
 }

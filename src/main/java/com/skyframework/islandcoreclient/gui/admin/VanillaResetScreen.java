@@ -1,11 +1,20 @@
 package com.skyframework.islandcoreclient.gui.admin;
 
 import java.util.Locale;
+import java.util.Optional;
 
 import com.skyframework.islandcoreclient.gui.common.BaseMenuScreen;
+import com.skyframework.islandcoreclient.network.ClientErrorToasts;
+import com.skyframework.islandcoreclient.network.PendingActionTracker;
+import com.skyframework.islandcoreclient.network.admin.vanilla.VanillaResetCancelC2S;
+import com.skyframework.islandcoreclient.network.admin.vanilla.VanillaResetConfirmC2S;
+import com.skyframework.islandcoreclient.network.admin.vanilla.VanillaResetListRequestC2S;
+import com.skyframework.islandcoreclient.network.admin.vanilla.VanillaResetQueueC2S;
 import com.skyframework.islandcoreclient.state.ClientIslandCache;
 import com.skyframework.islandcoreclient.state.ClientResetDimension;
 import com.skyframework.islandcoreclient.state.ClientVanillaResetState;
+
+import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
@@ -17,11 +26,17 @@ import net.minecraft.util.Formatting;
 import org.jetbrains.annotations.Nullable;
 
 /**
- * The 3 dimension rows are fixed ({@link ClientResetDimension}), not data-driven. "Encolar
- * reseteo" opens an options step (this same screen, {@link Mode#OPTIONS}) instead of a vanilla
- * {@link net.minecraft.client.gui.screen.ConfirmScreen}, since it needs a seed-mode form rather
- * than a yes/no prompt; from there it follows the same pending-countdown-then-confirm shape as
- * every other 3-layer flow in this project.
+ * The 3 dimension rows are fixed ({@link ClientResetDimension}), not data-driven — only their
+ * pending/queued state is. The queue is requested once from the constructor;
+ * {@link #refreshFromNetwork()} only rebuilds from {@link ClientIslandCache}.
+ *
+ * <p>"Encolar" opens an options step (this same screen, {@link Mode#OPTIONS}) for the seed-mode
+ * form; "Continuar" from there sends the real {@link VanillaResetQueueC2S} REQUEST (opening the
+ * server's own 30s confirmation window — tracked here client-locally, same pattern as every other
+ * 3-layer flow in this project) and moves to {@link Mode#PENDING}; "Confirmar" there sends
+ * {@link VanillaResetConfirmC2S}, which actually enqueues the reset in {@code
+ * pending_vanilla_reset.json} — only THEN does it show up as "queued" (Cancelar available) back
+ * in {@link Mode#LIST} on the next {@link VanillaResetListRequestC2S} refetch.
  */
 public class VanillaResetScreen extends BaseMenuScreen {
 	private enum Mode {
@@ -46,12 +61,19 @@ public class VanillaResetScreen extends BaseMenuScreen {
 	private ClientVanillaResetState.SeedMode selectedSeedMode = ClientVanillaResetState.SeedMode.RANDOM;
 	private TextFieldWidget seedField;
 
-	// 0 = not counting down. Screen-local: nothing is committed to ClientIslandCache until the
-	// Capa 3 confirm, exactly like DeleteIslandScreen.
+	// 0 = not counting down. Screen-local: nothing is committed until the real
+	// VanillaResetConfirmC2S succeeds, exactly like DeleteIslandScreen.
 	private long pendingExpiresAtMillis = 0L;
 
 	public VanillaResetScreen(Screen parent) {
 		super(Text.translatable("islandcoreclient.admin.vanilla_reset.title"), parent);
+		ClientPlayNetworking.send(new VanillaResetListRequestC2S());
+	}
+
+	// Called by ClientPacketHandlers when a fresh VanillaResetListS2C lands while this screen is
+	// open — same pattern as TeleportsScreen/BiomeScreen.
+	public void refreshFromNetwork() {
+		this.clearAndInit();
 	}
 
 	@Override
@@ -90,6 +112,7 @@ public class VanillaResetScreen extends BaseMenuScreen {
 						button -> {
 							this.mode = Mode.LIST;
 							this.pendingExpiresAtMillis = 0L;
+							ClientPlayNetworking.send(new VanillaResetListRequestC2S());
 							this.clearAndInit();
 						})
 				.dimensions(CONTENT_X, SUB_BACK_Y, 120, 16)
@@ -197,6 +220,7 @@ public class VanillaResetScreen extends BaseMenuScreen {
 		if (this.pendingExpiresAtMillis > 0 && System.currentTimeMillis() >= this.pendingExpiresAtMillis) {
 			this.mode = Mode.LIST;
 			this.pendingExpiresAtMillis = 0L;
+			ClientPlayNetworking.send(new VanillaResetListRequestC2S());
 			this.clearAndInit();
 			return;
 		}
@@ -226,29 +250,67 @@ public class VanillaResetScreen extends BaseMenuScreen {
 	}
 
 	private void onContinueClicked() {
+		if (this.selectedDimension == null) {
+			return;
+		}
 		if (this.selectedSeedMode == ClientVanillaResetState.SeedMode.SPECIFIED && parseSeed(this.seedField.getText()) == null) {
 			return;
 		}
-		this.mode = Mode.PENDING;
-		this.pendingExpiresAtMillis = System.currentTimeMillis() + PENDING_WINDOW_SECONDS * 1000L;
-		this.clearAndInit();
+
+		String dimensionKey = this.selectedDimension.name().toLowerCase(Locale.ROOT);
+		// The server only understands "CUSTOM" (explicit seed) or "DEFAULT" (defer to its own
+		// VanillaResetConfig) — RANDOM and KEEP both map to "DEFAULT" here, since requestReset has
+		// no 3-way mode of its own; see VanillaResetQueueC2S's javadoc.
+		String seedMode = this.selectedSeedMode == ClientVanillaResetState.SeedMode.SPECIFIED ? "CUSTOM" : "DEFAULT";
+		Optional<Long> seedValue = this.selectedSeedMode == ClientVanillaResetState.SeedMode.SPECIFIED
+				? Optional.ofNullable(parseSeed(this.seedField.getText()))
+				: Optional.empty();
+
+		ClientPlayNetworking.send(new VanillaResetQueueC2S(dimensionKey, seedMode, seedValue));
+		PendingActionTracker.await((success, reasonKey) -> {
+			if (success) {
+				this.mode = Mode.PENDING;
+				this.pendingExpiresAtMillis = System.currentTimeMillis() + PENDING_WINDOW_SECONDS * 1000L;
+			} else {
+				ClientErrorToasts.showReason(reasonKey);
+			}
+			this.clearAndInit();
+		});
 	}
 
 	private void onConfirmQueueClicked() {
-		if (this.selectedDimension != null) {
-			Long seedValue = this.selectedSeedMode == ClientVanillaResetState.SeedMode.SPECIFIED
-					? parseSeed(this.seedField.getText())
-					: null;
-			simulateVanillaResetConfirm(this.selectedDimension, this.selectedSeedMode, seedValue);
+		if (this.selectedDimension == null) {
+			this.mode = Mode.LIST;
+			this.pendingExpiresAtMillis = 0L;
+			this.clearAndInit();
+			return;
 		}
-		this.mode = Mode.LIST;
-		this.pendingExpiresAtMillis = 0L;
-		this.clearAndInit();
+
+		String dimensionKey = this.selectedDimension.name().toLowerCase(Locale.ROOT);
+		ClientPlayNetworking.send(new VanillaResetConfirmC2S(dimensionKey));
+		PendingActionTracker.await((success, reasonKey) -> {
+			this.mode = Mode.LIST;
+			this.pendingExpiresAtMillis = 0L;
+			if (success) {
+				ClientPlayNetworking.send(new VanillaResetListRequestC2S());
+			} else {
+				ClientErrorToasts.showReason(reasonKey);
+			}
+			this.clearAndInit();
+		});
 	}
 
 	private void onCancelClicked(ClientResetDimension dimension) {
-		simulateVanillaResetCancel(dimension);
-		this.clearAndInit();
+		String dimensionKey = dimension.name().toLowerCase(Locale.ROOT);
+		ClientPlayNetworking.send(new VanillaResetCancelC2S(dimensionKey));
+		PendingActionTracker.await((success, reasonKey) -> {
+			if (success) {
+				ClientPlayNetworking.send(new VanillaResetListRequestC2S());
+			} else {
+				ClientErrorToasts.showReason(reasonKey);
+			}
+			this.clearAndInit();
+		});
 	}
 
 	@Nullable
@@ -258,20 +320,5 @@ public class VanillaResetScreen extends BaseMenuScreen {
 		} catch (NumberFormatException e) {
 			return null;
 		}
-	}
-
-	// TODO: replace with sending VanillaResetQueueC2S (request phase, opening the options form)
-	// and VanillaResetConfirmC2S (this method, on the final "Confirmar" click) once IslandCore
-	// implements the admin protocol; the server should own the 30s window, same reasoning as
-	// every other 3-layer flow in this project.
-	private static void simulateVanillaResetConfirm(ClientResetDimension dimension,
-			ClientVanillaResetState.SeedMode seedMode, @Nullable Long seedValue) {
-		ClientIslandCache.getVanillaResetState(dimension).queue(seedMode, seedValue);
-	}
-
-	// TODO: replace with sending VanillaResetCancelC2S and awaiting ActionResultS2C once
-	// IslandCore implements the admin protocol.
-	private static void simulateVanillaResetCancel(ClientResetDimension dimension) {
-		ClientIslandCache.getVanillaResetState(dimension).cancel();
 	}
 }

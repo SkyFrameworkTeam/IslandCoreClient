@@ -1,12 +1,17 @@
 package com.skyframework.islandcoreclient.state;
 
+import com.skyframework.islandcoreclient.network.admin.dimension.DimensionDetailS2C;
+import com.skyframework.islandcoreclient.network.admin.dimension.DimensionListS2C;
+import com.skyframework.islandcoreclient.network.admin.island.AdminIslandDetailS2C;
+import com.skyframework.islandcoreclient.network.admin.island.AdminIslandListS2C;
+import com.skyframework.islandcoreclient.network.admin.spawn.SpawnStatusS2C;
+import com.skyframework.islandcoreclient.network.admin.vanilla.VanillaResetListS2C;
 import com.skyframework.islandcoreclient.network.biome.BiomeTiersS2C;
 import com.skyframework.islandcoreclient.network.island.IslandSnapshotS2C;
 import com.skyframework.islandcoreclient.network.teleport.TeleportStatusS2C;
 
 import java.util.ArrayList;
 import java.util.EnumMap;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -80,31 +85,28 @@ public final class ClientIslandCache {
 		}
 	}
 
-	// Block C (Admin tab) simulated fixture data — untouched, out of scope for this sprint
-	// (the admin/Dimension Manager/vanilla reset protocol doesn't exist on the server yet).
-	private static final List<ClientAdminIslandSummaryView> ADMIN_ISLANDS = new ArrayList<>(List.of(
-			new ClientAdminIslandSummaryView(UUID.randomUUID(), "Notch_Fan99", 60, 60, "PLAINS", "ACTIVE", 3),
-			new ClientAdminIslandSummaryView(UUID.randomUUID(), "Steve123", 30, 45, "DESERT", "ACTIVE", 1),
-			new ClientAdminIslandSummaryView(UUID.randomUUID(), "AlexBuilder", 50, 50, "FOREST", "ACTIVE", 5),
-			new ClientAdminIslandSummaryView(UUID.randomUUID(), "Grumpy_Cat", 20, 45, "SWAMP", "DELETING", 2),
-			new ClientAdminIslandSummaryView(UUID.randomUUID(), "SkyQueen", 45, 60, "PLAINS", "ACTIVE", 4)
-	));
-	private static final Map<UUID, ClientAdminIslandDetailView> ADMIN_ISLAND_DETAILS = buildAdminIslandDetails();
+	// Admin network block: all real, populated from AdminIslandListS2C/AdminIslandDetailS2C/
+	// SpawnStatusS2C/DimensionListS2C/DimensionDetailS2C/VanillaResetListS2C. Empty/default until
+	// the first real reply lands — see ClientPacketHandlers' refreshFromNetwork() wiring for each.
+	private static volatile List<ClientAdminIslandSummaryView> adminIslands = List.of();
+	private static volatile int adminIslandsTotalPages = 0;
+	private static volatile int adminIslandsCurrentPage = 0;
 
-	private static volatile boolean spawnExists = true;
-	private static volatile int spawnSize = 25;
 	@Nullable
-	private static volatile BlockPos spawnHomeLocation = new BlockPos(120, 68, -45);
+	private static volatile UUID adminIslandDetailUuid = null;
+	@Nullable
+	private static volatile ClientAdminIslandDetailView adminIslandDetail = null;
 
-	private static final List<ClientDimensionView> DIMENSIONS = new ArrayList<>(List.of(
-			new ClientDimensionView("islandcore:islands", "Islands", ClientDimensionStyle.VOID_FLAT, 8362472L, "ACTIVE"),
-			new ClientDimensionView("islandcore:mining_world", "Mundo de Minería", ClientDimensionStyle.OVERWORLD_LIKE, -1928374651L, "ACTIVE"),
-			new ClientDimensionView("islandcore:the_abyss", "El Abismo", ClientDimensionStyle.NETHER_LIKE, 445566778L, "ACTIVE")
-	));
+	private static volatile boolean spawnExists = false;
+	private static volatile int spawnSize = 0;
+	@Nullable
+	private static volatile BlockPos spawnHomeLocation = null;
+
+	private static volatile List<ClientDimensionView> dimensions = new ArrayList<>();
 
 	private static final Map<ClientResetDimension, ClientVanillaResetState> VANILLA_RESET_STATES = new EnumMap<>(Map.of(
 			ClientResetDimension.OVERWORLD, new ClientVanillaResetState(false, null, null),
-			ClientResetDimension.NETHER, new ClientVanillaResetState(true, ClientVanillaResetState.SeedMode.RANDOM, null),
+			ClientResetDimension.NETHER, new ClientVanillaResetState(false, null, null),
 			ClientResetDimension.END, new ClientVanillaResetState(false, null, null)
 	));
 
@@ -322,34 +324,68 @@ public final class ClientIslandCache {
 		return TELEPORT_STATES.get(type);
 	}
 
-	public static List<ClientAdminIslandSummaryView> getAdminIslands() {
-		return ADMIN_ISLANDS;
+	public static void applyAdminIslandList(AdminIslandListS2C snapshot) {
+		List<ClientAdminIslandSummaryView> mapped = new ArrayList<>();
+		for (AdminIslandListS2C.IslandEntry entry : snapshot.islands()) {
+			mapped.add(new ClientAdminIslandSummaryView(entry.ownerUuid(), entry.ownerName(), entry.size(),
+					entry.maxSize(), entry.type(), entry.currentBiomeId(), entry.state(), entry.memberCount()));
+		}
+		adminIslands = List.copyOf(mapped);
+		adminIslandsTotalPages = snapshot.totalPages();
+		adminIslandsCurrentPage = snapshot.currentPage();
 	}
 
+	public static List<ClientAdminIslandSummaryView> getAdminIslands() {
+		return adminIslands;
+	}
+
+	public static int getAdminIslandsTotalPages() {
+		return adminIslandsTotalPages;
+	}
+
+	public static int getAdminIslandsCurrentPage() {
+		return adminIslandsCurrentPage;
+	}
+
+	public static void applyAdminIslandDetail(AdminIslandDetailS2C snapshot) {
+		List<ClientMemberView> members = new ArrayList<>();
+		for (IslandSnapshotS2C.MemberEntry entry : snapshot.members()) {
+			members.add(new ClientMemberView(entry.uuid(), entry.name(), ClientMemberView.Role.valueOf(entry.role())));
+		}
+
+		ClientAdminIslandDetailView.EntityCounts entities = new ClientAdminIslandDetailView.EntityCounts(
+				snapshot.entities().players(), snapshot.entities().hostile(), snapshot.entities().passive(),
+				snapshot.entities().cobblemon(), snapshot.entities().items(), snapshot.entities().other());
+
+		adminIslandDetailUuid = snapshot.ownerUuid();
+		adminIslandDetail = new ClientAdminIslandDetailView(
+				snapshot.islandId().toString(), snapshot.ownerUuid(), snapshot.ownerName(), snapshot.dimension(),
+				snapshot.gridX(), snapshot.gridZ(), snapshot.center(), snapshot.boundsMin(), snapshot.boundsMax(),
+				snapshot.plotBoundsMin(), snapshot.plotBoundsMax(), snapshot.islandSize(), snapshot.maxSize(), snapshot.plotSize(),
+				snapshot.islandType(), snapshot.homeLocation(), members, snapshot.state(),
+				snapshot.createdAt(), snapshot.updatedAt(), entities);
+	}
+
+	// Only returns a cached detail if it's actually for ownerUuid — a stale detail for a
+	// PREVIOUSLY viewed island must never be shown for a newly opened one before its own real
+	// AdminIslandDetailS2C arrives (see AdminIslandDetailScreen's refreshFromNetwork wiring).
 	@Nullable
 	public static ClientAdminIslandDetailView getAdminIslandDetail(UUID ownerUuid) {
-		return ADMIN_ISLAND_DETAILS.get(ownerUuid);
+		return ownerUuid.equals(adminIslandDetailUuid) ? adminIslandDetail : null;
 	}
 
-	public static void removeAdminIsland(UUID ownerUuid) {
-		ADMIN_ISLANDS.removeIf(summary -> summary.ownerUuid().equals(ownerUuid));
-		ADMIN_ISLAND_DETAILS.remove(ownerUuid);
+	public static void applySpawnStatus(SpawnStatusS2C status) {
+		spawnExists = status.exists();
+		spawnSize = status.size();
+		spawnHomeLocation = status.homeLocation().orElse(null);
 	}
 
 	public static boolean spawnExists() {
 		return spawnExists;
 	}
 
-	public static void setSpawnExists(boolean value) {
-		spawnExists = value;
-	}
-
 	public static int getSpawnSize() {
 		return spawnSize;
-	}
-
-	public static void setSpawnSize(int value) {
-		spawnSize = value;
 	}
 
 	@Nullable
@@ -357,46 +393,52 @@ public final class ClientIslandCache {
 		return spawnHomeLocation;
 	}
 
-	public static void setSpawnHomeLocation(BlockPos pos) {
-		spawnHomeLocation = pos;
+	public static void applyDimensionList(DimensionListS2C snapshot) {
+		List<ClientDimensionView> mapped = new ArrayList<>();
+		for (DimensionListS2C.DimensionEntry entry : snapshot.dimensions()) {
+			mapped.add(new ClientDimensionView(entry.id(), entry.displayName(),
+					ClientDimensionStyle.valueOf(entry.style()), entry.seed(), entry.state()));
+		}
+		dimensions = List.copyOf(mapped);
 	}
 
 	public static List<ClientDimensionView> getDimensions() {
-		return DIMENSIONS;
+		return dimensions;
 	}
 
-	public static void addDimension(ClientDimensionView dimension) {
-		DIMENSIONS.add(dimension);
+	// Populates createdAt/updatedAt onto the matching cached row from the list (DimensionEntry
+	// doesn't carry them, only DimensionDetailS2C does) — a no-op if the dimension isn't in the
+	// last fetched list for any reason (e.g. deleted between the list and detail replies).
+	public static void applyDimensionDetail(DimensionDetailS2C detail) {
+		for (ClientDimensionView dimension : dimensions) {
+			if (dimension.id().equals(detail.id())) {
+				dimension.applyDetail(detail.createdAt(), detail.updatedAt());
+				return;
+			}
+		}
 	}
 
-	public static void removeDimension(String id) {
-		DIMENSIONS.removeIf(dimension -> dimension.id().equals(id));
+	public static void applyVanillaResetList(VanillaResetListS2C snapshot) {
+		for (ClientResetDimension dimension : ClientResetDimension.values()) {
+			VANILLA_RESET_STATES.get(dimension).cancel();
+		}
+		for (VanillaResetListS2C.QueueEntry entry : snapshot.queue()) {
+			ClientResetDimension dimension = ClientResetDimension.valueOf(entry.dimensionKey().toUpperCase(Locale.ROOT));
+			// entry.seedMode() is now the real, persisted mode the server decided at confirm time
+			// (PendingVanillaReset#seedMode) — no longer inferred from whether entry.seed() is
+			// present, which couldn't tell a resolved RANDOM seed apart from a CUSTOM one. Client's
+			// own enum spells the third case SPECIFIED rather than CUSTOM; everything else matches
+			// by name.
+			ClientVanillaResetState.SeedMode seedMode = switch (entry.seedMode()) {
+				case "RANDOM" -> ClientVanillaResetState.SeedMode.RANDOM;
+				case "CUSTOM" -> ClientVanillaResetState.SeedMode.SPECIFIED;
+				default -> ClientVanillaResetState.SeedMode.KEEP;
+			};
+			VANILLA_RESET_STATES.get(dimension).queue(seedMode, entry.seed().orElse(null));
+		}
 	}
 
 	public static ClientVanillaResetState getVanillaResetState(ClientResetDimension dimension) {
 		return VANILLA_RESET_STATES.get(dimension);
-	}
-
-	private static Map<UUID, ClientAdminIslandDetailView> buildAdminIslandDetails() {
-		Map<UUID, ClientAdminIslandDetailView> details = new HashMap<>();
-		int gridIndex = 0;
-		for (ClientAdminIslandSummaryView summary : ADMIN_ISLANDS) {
-			List<ClientMemberView> members = new ArrayList<>();
-			members.add(new ClientMemberView(summary.ownerUuid(), summary.ownerName(), ClientMemberView.Role.OWNER));
-			for (int i = 1; i < summary.memberCount(); i++) {
-				members.add(new ClientMemberView(UUID.randomUUID(), "Miembro" + i, ClientMemberView.Role.MEMBER));
-			}
-
-			String slug = summary.ownerName().toLowerCase(Locale.ROOT);
-			details.put(summary.ownerUuid(), new ClientAdminIslandDetailView(
-					"island-" + slug, summary.ownerUuid(), summary.ownerName(), "islandcore:island/" + slug,
-					gridIndex * 500, gridIndex * 500,
-					summary.size(), summary.maxSize(), summary.maxSize() + 20,
-					members, summary.state(),
-					"12 mayo 2026, 18:03", "30 julio 2026, 09:15",
-					new ClientAdminIslandDetailView.EntityCounts(members.size(), 4, 12, 2, 30, 1)));
-			gridIndex++;
-		}
-		return details;
 	}
 }

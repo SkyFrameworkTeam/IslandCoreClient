@@ -30,10 +30,4 @@ public final class DebugSimulationHelpers {
 			ClientIslandCache.startBiomeCooldown(BIOME_COOLDOWN_DEBUG_SECONDS);
 		}
 	}
-
-	// La pantalla de gestión de Spawn (Admin) sigue simulada — el protocolo de admin no existe
-	// todavía en el servidor (Paso 3).
-	public static void toggleSpawnExistsDebug() {
-		ClientIslandCache.setSpawnExists(!ClientIslandCache.spawnExists());
-	}
 }

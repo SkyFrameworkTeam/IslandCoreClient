@@ -1,17 +1,29 @@
 package com.skyframework.islandcoreclient.gui.admin;
 
 import com.skyframework.islandcoreclient.gui.common.BaseMenuScreen;
+import com.skyframework.islandcoreclient.network.ClientErrorToasts;
+import com.skyframework.islandcoreclient.network.PendingActionTracker;
+import com.skyframework.islandcoreclient.network.admin.spawn.SpawnIslandCreateC2S;
+import com.skyframework.islandcoreclient.network.admin.spawn.SpawnIslandResizeC2S;
+import com.skyframework.islandcoreclient.network.admin.spawn.SpawnIslandSetHomeC2S;
+import com.skyframework.islandcoreclient.network.admin.spawn.SpawnStatusRequestC2S;
 import com.skyframework.islandcoreclient.state.ClientIslandCache;
 
-import net.minecraft.client.MinecraftClient;
+import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
+
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.client.gui.widget.TextFieldWidget;
-import net.minecraft.client.network.ClientPlayerEntity;
 import net.minecraft.text.Text;
 import net.minecraft.util.math.BlockPos;
 
+/**
+ * Requests the real status once from the constructor; {@link #refreshFromNetwork()} only rebuilds
+ * from {@link ClientIslandCache}. {@link SpawnIslandSetHomeC2S} carries NO coordinates — the
+ * server reads the sender's actual position and validates it itself (bounds + dimension, same as
+ * "/island admin spawn sethome"); this screen must never read/send a local BlockPos for it.
+ */
 public class SpawnManagerScreen extends BaseMenuScreen {
 	private static final int CONTENT_X = 16;
 	private static final int LINE_HEIGHT = 11;
@@ -28,6 +40,13 @@ public class SpawnManagerScreen extends BaseMenuScreen {
 
 	public SpawnManagerScreen(Screen parent) {
 		super(Text.translatable("islandcoreclient.admin.spawn.title"), parent);
+		ClientPlayNetworking.send(new SpawnStatusRequestC2S());
+	}
+
+	// Called by ClientPacketHandlers when a fresh SpawnStatusS2C lands while this screen is open —
+	// same pattern as TeleportsScreen/BiomeScreen.
+	public void refreshFromNetwork() {
+		this.clearAndInit();
 	}
 
 	@Override
@@ -98,8 +117,14 @@ public class SpawnManagerScreen extends BaseMenuScreen {
 
 	private void onCreateClicked() {
 		int size = parseSize(this.sizeField.getText(), 25);
-		simulateSpawnCreate(size);
-		this.clearAndInit();
+		ClientPlayNetworking.send(new SpawnIslandCreateC2S(size));
+		PendingActionTracker.await((success, reasonKey) -> {
+			if (success) {
+				ClientPlayNetworking.send(new SpawnStatusRequestC2S());
+			} else {
+				ClientErrorToasts.showReason(reasonKey);
+			}
+		});
 	}
 
 	private void onResizeFieldChanged(String text) {
@@ -118,18 +143,28 @@ public class SpawnManagerScreen extends BaseMenuScreen {
 		int value = parseSize(this.sizeField.getText(), -1);
 		if (value <= ClientIslandCache.getSpawnSize()) {
 			// Defense in depth: the button is already inactive in this case, this should be
-			// unreachable, but resizeIsland must never shrink, so never simulate it regardless.
+			// unreachable, but resizeIsland must never shrink, so never send it regardless.
 			return;
 		}
-		simulateSpawnResize(value);
-		this.clearAndInit();
+		ClientPlayNetworking.send(new SpawnIslandResizeC2S(value));
+		PendingActionTracker.await((success, reasonKey) -> {
+			if (success) {
+				ClientPlayNetworking.send(new SpawnStatusRequestC2S());
+			} else {
+				ClientErrorToasts.showReason(reasonKey);
+			}
+		});
 	}
 
 	private void onSetHomeClicked() {
-		ClientPlayerEntity player = MinecraftClient.getInstance().player;
-		if (player != null) {
-			simulateSpawnSetHome(player.getBlockPos());
-		}
+		ClientPlayNetworking.send(new SpawnIslandSetHomeC2S());
+		PendingActionTracker.await((success, reasonKey) -> {
+			if (success) {
+				ClientPlayNetworking.send(new SpawnStatusRequestC2S());
+			} else {
+				ClientErrorToasts.showReason(reasonKey);
+			}
+		});
 	}
 
 	private static int parseSize(String text, int fallback) {
@@ -138,27 +173,5 @@ public class SpawnManagerScreen extends BaseMenuScreen {
 		} catch (NumberFormatException e) {
 			return fallback;
 		}
-	}
-
-	// TODO: replace with sending SpawnIslandCreateC2S and awaiting ActionResultS2C once IslandCore
-	// implements the admin protocol.
-	private static void simulateSpawnCreate(int size) {
-		ClientIslandCache.setSpawnExists(true);
-		ClientIslandCache.setSpawnSize(size);
-	}
-
-	// TODO: replace with sending SpawnIslandResizeC2S and awaiting ActionResultS2C once IslandCore
-	// implements the admin protocol. Client-side validation above (strictly greater than the
-	// current size) mirrors the server's real constraint: resizeIsland only ever grows.
-	private static void simulateSpawnResize(int newSize) {
-		ClientIslandCache.setSpawnSize(newSize);
-	}
-
-	// TODO: replace with sending SpawnIslandSetHomeC2S once IslandCore implements the admin
-	// protocol. The real packet must NOT carry coordinates as an argument — the server reads the
-	// admin's actual position itself. This client-side BlockPos read only exists to preview the
-	// behavior locally while there is no server to talk to.
-	private static void simulateSpawnSetHome(BlockPos pos) {
-		ClientIslandCache.setSpawnHomeLocation(pos);
 	}
 }

@@ -1,12 +1,21 @@
 package com.skyframework.islandcoreclient.gui.admin;
 
-import java.util.Random;
-
 import com.skyframework.islandcoreclient.gui.common.BaseMenuScreen;
 import com.skyframework.islandcoreclient.gui.common.ToggleRow;
+import com.skyframework.islandcoreclient.network.ClientErrorToasts;
+import com.skyframework.islandcoreclient.network.PendingActionTracker;
+import com.skyframework.islandcoreclient.network.admin.dimension.DimensionCreateC2S;
+import com.skyframework.islandcoreclient.network.admin.dimension.DimensionDeleteC2S;
+import com.skyframework.islandcoreclient.network.admin.dimension.DimensionDeleteConfirmC2S;
+import com.skyframework.islandcoreclient.network.admin.dimension.DimensionDetailRequestC2S;
+import com.skyframework.islandcoreclient.network.admin.dimension.DimensionListRequestC2S;
+import com.skyframework.islandcoreclient.network.admin.dimension.DimensionRegenerateC2S;
+import com.skyframework.islandcoreclient.network.admin.dimension.DimensionRegenerateConfirmC2S;
 import com.skyframework.islandcoreclient.state.ClientDimensionStyle;
 import com.skyframework.islandcoreclient.state.ClientDimensionView;
 import com.skyframework.islandcoreclient.state.ClientIslandCache;
+
+import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.ConfirmScreen;
@@ -16,11 +25,15 @@ import net.minecraft.client.gui.widget.TextFieldWidget;
 import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
 
+import java.util.Optional;
+
 import org.jetbrains.annotations.Nullable;
 
 /**
- * List / detail / create-form all live in this one screen, switched by {@link #mode}, same
- * "reuse the frame, swap the widgets" idea as the Dashboard's Admin tab.
+ * List / detail / create-form all live in this one screen, switched by {@link #mode}. The initial
+ * list is requested once from the constructor; {@link #refreshFromNetwork()} only rebuilds from
+ * {@link ClientIslandCache} — resending from initContent() too would loop forever while the
+ * screen stays open (every reply would trigger another request).
  */
 public class DimensionManagerScreen extends BaseMenuScreen {
 	private enum Mode {
@@ -60,6 +73,13 @@ public class DimensionManagerScreen extends BaseMenuScreen {
 
 	public DimensionManagerScreen(Screen parent) {
 		super(Text.translatable("islandcoreclient.admin.dimension_manager.title"), parent);
+		ClientPlayNetworking.send(new DimensionListRequestC2S());
+	}
+
+	// Called by ClientPacketHandlers when a fresh DimensionListS2C/DimensionDetailS2C lands while
+	// this screen is open — same pattern as TeleportsScreen/BiomeScreen.
+	public void refreshFromNetwork() {
+		this.clearAndInit();
 	}
 
 	@Override
@@ -79,6 +99,7 @@ public class DimensionManagerScreen extends BaseMenuScreen {
 							button -> {
 								this.selectedDimensionId = dimension.id();
 								this.mode = Mode.DETAIL;
+								ClientPlayNetworking.send(new DimensionDetailRequestC2S(dimension.path()));
 								this.clearAndInit();
 							})
 					.dimensions(CONTENT_X, y, 360, ROW_HEIGHT)
@@ -102,6 +123,7 @@ public class DimensionManagerScreen extends BaseMenuScreen {
 						Text.translatable("islandcoreclient.admin.dimension_manager.back_to_list"),
 						button -> {
 							this.mode = Mode.LIST;
+							ClientPlayNetworking.send(new DimensionListRequestC2S());
 							this.clearAndInit();
 						})
 				.dimensions(CONTENT_X, SUB_BACK_Y, 120, 16)
@@ -240,7 +262,20 @@ public class DimensionManagerScreen extends BaseMenuScreen {
 		y += LINE_HEIGHT;
 		context.drawTextWithShadow(this.textRenderer,
 				Text.translatable("islandcoreclient.admin.dimension_manager.detail_seed", dimension.seed()), x, y, 0xFFFFFF);
-		y += LINE_HEIGHT + 16;
+		y += LINE_HEIGHT;
+
+		// Only DimensionDetailS2C carries these (the list doesn't) — null until this dimension's
+		// detail has actually been fetched at least once, which initListContent's row click always
+		// triggers before entering DETAIL mode, so this is normally already populated by the time
+		// this renders.
+		if (dimension.createdAt() != null && dimension.updatedAt() != null) {
+			context.drawTextWithShadow(this.textRenderer,
+					Text.translatable("islandcoreclient.admin.dimension_manager.detail_created_at", dimension.createdAt()), x, y, 0xAAAAAA);
+			y += LINE_HEIGHT;
+			context.drawTextWithShadow(this.textRenderer,
+					Text.translatable("islandcoreclient.admin.dimension_manager.detail_updated_at", dimension.updatedAt()), x, y, 0xAAAAAA);
+		}
+		y += 16;
 
 		if (this.pendingAction != null) {
 			long remaining = Math.max(0L, (this.pendingActionExpiresAtMillis - System.currentTimeMillis()) / 1000L);
@@ -272,7 +307,7 @@ public class DimensionManagerScreen extends BaseMenuScreen {
 		this.client.setScreen(new ConfirmScreen(
 				confirmed -> {
 					if (confirmed) {
-						simulateDimensionActionRequest(PendingAction.REGENERATE);
+						requestAction(PendingAction.REGENERATE, dimension);
 					}
 					this.client.setScreen(this);
 				},
@@ -285,7 +320,7 @@ public class DimensionManagerScreen extends BaseMenuScreen {
 		this.client.setScreen(new ConfirmScreen(
 				confirmed -> {
 					if (confirmed) {
-						simulateDimensionActionRequest(PendingAction.DELETE);
+						requestAction(PendingAction.DELETE, dimension);
 					}
 					this.client.setScreen(this);
 				},
@@ -294,17 +329,63 @@ public class DimensionManagerScreen extends BaseMenuScreen {
 						Text.literal(dimension.displayName()).formatted(Formatting.BOLD))));
 	}
 
+	// Request (non-confirm) phase for both delete and regenerate: opens the server's own 30s
+	// confirmation window. This screen tracks that window client-locally (pendingActionExpiresAtMillis),
+	// same pattern as DeleteIslandScreen/AdminIslandDetailScreen/VanillaResetScreen.
+	private void requestAction(PendingAction action, ClientDimensionView dimension) {
+		if (action == PendingAction.DELETE) {
+			ClientPlayNetworking.send(new DimensionDeleteC2S(dimension.path()));
+		} else {
+			ClientPlayNetworking.send(new DimensionRegenerateC2S(dimension.path(), Optional.empty()));
+		}
+		PendingActionTracker.await((success, reasonKey) -> {
+			if (success) {
+				this.pendingAction = action;
+				this.pendingActionExpiresAtMillis = System.currentTimeMillis() + PENDING_ACTION_WINDOW_SECONDS * 1000L;
+			} else {
+				ClientErrorToasts.showReason(reasonKey);
+			}
+			this.clearAndInit();
+		});
+	}
+
 	private void onConfirmActionClicked() {
 		ClientDimensionView dimension = getSelectedDimension();
-		if (dimension != null && this.pendingAction == PendingAction.DELETE) {
-			simulateDimensionDeleteConfirm(dimension.id());
-			this.mode = Mode.LIST;
-		} else if (dimension != null && this.pendingAction == PendingAction.REGENERATE) {
-			simulateDimensionRegenerateConfirm(dimension);
+		if (dimension == null || this.pendingAction == null) {
+			this.pendingAction = null;
+			this.pendingActionExpiresAtMillis = 0L;
+			this.clearAndInit();
+			return;
 		}
-		this.pendingAction = null;
-		this.pendingActionExpiresAtMillis = 0L;
-		this.clearAndInit();
+
+		if (this.pendingAction == PendingAction.DELETE) {
+			ClientPlayNetworking.send(new DimensionDeleteConfirmC2S(dimension.path()));
+			PendingActionTracker.await((success, reasonKey) -> {
+				this.pendingAction = null;
+				this.pendingActionExpiresAtMillis = 0L;
+				if (success) {
+					this.mode = Mode.LIST;
+					ClientPlayNetworking.send(new DimensionListRequestC2S());
+				} else {
+					ClientErrorToasts.showReason(reasonKey);
+				}
+				this.clearAndInit();
+			});
+		} else {
+			ClientPlayNetworking.send(new DimensionRegenerateConfirmC2S(dimension.path()));
+			PendingActionTracker.await((success, reasonKey) -> {
+				this.pendingAction = null;
+				this.pendingActionExpiresAtMillis = 0L;
+				if (success) {
+					// Stays in DETAIL mode: regenerating keeps the same dimension id, just changes
+					// its seed — re-fetch this one dimension's detail to reflect the new seed.
+					ClientPlayNetworking.send(new DimensionDetailRequestC2S(dimension.path()));
+				} else {
+					ClientErrorToasts.showReason(reasonKey);
+				}
+				this.clearAndInit();
+			});
+		}
 	}
 
 	private void onCreateClicked() {
@@ -320,10 +401,17 @@ public class DimensionManagerScreen extends BaseMenuScreen {
 			return;
 		}
 
-		Long seed = this.randomSeed ? null : parseSeed(this.seedField.getText());
-		simulateDimensionCreate(id, name, this.selectedStyle, seed);
-		this.mode = Mode.LIST;
-		this.clearAndInit();
+		Optional<Long> seed = this.randomSeed ? Optional.empty() : Optional.ofNullable(parseSeed(this.seedField.getText()));
+		ClientPlayNetworking.send(new DimensionCreateC2S(id, name, this.selectedStyle.name(), seed));
+		PendingActionTracker.await((success, reasonKey) -> {
+			if (success) {
+				this.mode = Mode.LIST;
+				ClientPlayNetworking.send(new DimensionListRequestC2S());
+				this.clearAndInit();
+			} else {
+				ClientErrorToasts.showReason(reasonKey);
+			}
+		});
 	}
 
 	@Nullable
@@ -333,32 +421,5 @@ public class DimensionManagerScreen extends BaseMenuScreen {
 		} catch (NumberFormatException e) {
 			return null;
 		}
-	}
-
-	// TODO: replace with sending DimensionRegenerateC2S / DimensionDeleteC2S (request phase) once
-	// IslandCore implements the admin protocol; the server should own the 30s confirmation window,
-	// same reasoning as the other 3-layer flows in this project.
-	private void simulateDimensionActionRequest(PendingAction action) {
-		this.pendingAction = action;
-		this.pendingActionExpiresAtMillis = System.currentTimeMillis() + PENDING_ACTION_WINDOW_SECONDS * 1000L;
-	}
-
-	// TODO: replace with sending DimensionDeleteC2S (confirm phase) and awaiting ActionResultS2C
-	// once IslandCore implements the admin protocol.
-	private static void simulateDimensionDeleteConfirm(String id) {
-		ClientIslandCache.removeDimension(id);
-	}
-
-	// TODO: replace with sending DimensionRegenerateC2S (confirm phase) and awaiting
-	// ActionResultS2C once IslandCore implements the admin protocol.
-	private static void simulateDimensionRegenerateConfirm(ClientDimensionView dimension) {
-		dimension.setSeed(new Random().nextLong());
-	}
-
-	// TODO: replace with sending DimensionCreateC2S and awaiting ActionResultS2C once IslandCore
-	// implements the admin protocol.
-	private static void simulateDimensionCreate(String id, String name, ClientDimensionStyle style, @Nullable Long seed) {
-		long resolvedSeed = seed != null ? seed : new Random().nextLong();
-		ClientIslandCache.addDimension(new ClientDimensionView("islandcore:" + id, name, style, resolvedSeed, "ACTIVE"));
 	}
 }

@@ -92,9 +92,10 @@ public class DashboardScreen extends BaseMenuScreen {
 		}
 
 		// DEBUG - quitar cuando haya snapshot real. Sprint "Integración de red real": el handshake,
-		// isOperator, el snapshot de isla y los teletransportes ya usan red real, así que los
-		// botones que forzaban esos estados (Forzar conectado, Cooldowns TP, Alternar sin isla,
-		// Forzar admin) se han quitado. Estos dos siguen aquí porque NINGÚN paquete actual expone
+		// isOperator, el snapshot de isla, los teletransportes y ahora todo el bloque Admin (islas,
+		// Spawn, Dimension Manager, reseteo vanilla) ya usan red real, así que los botones que
+		// forzaban esos estados (Forzar conectado, Cooldowns TP, Alternar sin isla, Forzar admin,
+		// Alternar spawn) se han quitado. Estos dos siguen aquí porque NINGÚN paquete actual expone
 		// invitaciones entrantes ni el cooldown de cambio de bioma (ver ClientIslandCache).
 		this.addDrawableChild(ButtonWidget.builder(
 						Text.literal("[DEBUG] Invitación"),
@@ -105,12 +106,6 @@ public class DashboardScreen extends BaseMenuScreen {
 						Text.literal("[DEBUG] Cooldown bioma"),
 						button -> DebugSimulationHelpers.toggleBiomeCooldownDebug())
 				.dimensions(132, this.height - 20, 140, 16)
-				.build());
-		// Alternar spawn: la pantalla de gestión de Spawn (Admin) sigue simulada (Paso 3).
-		this.addDrawableChild(ButtonWidget.builder(
-						Text.literal("[DEBUG] Alternar spawn"),
-						button -> DebugSimulationHelpers.toggleSpawnExistsDebug())
-				.dimensions(8, this.height - 40, 150, 16)
 				.build());
 	}
 

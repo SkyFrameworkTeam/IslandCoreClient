@@ -3,9 +3,17 @@ package com.skyframework.islandcoreclient.gui.admin;
 import java.util.UUID;
 
 import com.skyframework.islandcoreclient.gui.common.BaseMenuScreen;
+import com.skyframework.islandcoreclient.network.ClientErrorToasts;
+import com.skyframework.islandcoreclient.network.PendingActionTracker;
+import com.skyframework.islandcoreclient.network.admin.island.AdminIslandDeleteC2S;
+import com.skyframework.islandcoreclient.network.admin.island.AdminIslandDeleteConfirmC2S;
+import com.skyframework.islandcoreclient.network.admin.island.AdminIslandDetailRequestC2S;
+import com.skyframework.islandcoreclient.network.admin.island.AdminIslandListRequestC2S;
 import com.skyframework.islandcoreclient.state.ClientAdminIslandDetailView;
 import com.skyframework.islandcoreclient.state.ClientIslandCache;
 import com.skyframework.islandcoreclient.state.ClientMemberView;
+
+import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.ConfirmScreen;
@@ -16,6 +24,12 @@ import net.minecraft.util.Formatting;
 
 import org.jetbrains.annotations.Nullable;
 
+/**
+ * Real 3-layer delete flow, same shape as {@code DeleteIslandScreen}: request (opens a 30s LOCAL
+ * window mirroring IslandDeletionServiceImpl's own 30s server window, exactly like every other
+ * confirmation flow in this project) then confirm. The detail itself is requested once from the
+ * constructor; {@link #refreshFromNetwork()} only rebuilds from {@link ClientIslandCache}.
+ */
 public class AdminIslandDetailScreen extends BaseMenuScreen {
 	private static final long PENDING_DELETION_WINDOW_SECONDS = 30L;
 	private static final int CONTENT_X = 16;
@@ -26,8 +40,6 @@ public class AdminIslandDetailScreen extends BaseMenuScreen {
 	private static final int BODY_COLOR = 0xDDDDDD;
 
 	private final UUID ownerUuid;
-	@Nullable
-	private final ClientAdminIslandDetailView detail;
 
 	// 0 = no pending deletion. Screen-local UI flow state, same pattern as DeleteIslandScreen.
 	private long pendingDeletionExpiresAtMillis = 0L;
@@ -35,12 +47,23 @@ public class AdminIslandDetailScreen extends BaseMenuScreen {
 	public AdminIslandDetailScreen(UUID ownerUuid, Screen parent) {
 		super(Text.translatable("islandcoreclient.admin.island_detail.title"), parent);
 		this.ownerUuid = ownerUuid;
-		this.detail = ClientIslandCache.getAdminIslandDetail(ownerUuid);
+		ClientPlayNetworking.send(new AdminIslandDetailRequestC2S(ownerUuid));
+	}
+
+	// Called by ClientPacketHandlers when a fresh AdminIslandDetailS2C lands while this screen is
+	// open — same pattern as TeleportsScreen/BiomeScreen.
+	public void refreshFromNetwork() {
+		this.clearAndInit();
+	}
+
+	@Nullable
+	private ClientAdminIslandDetailView detail() {
+		return ClientIslandCache.getAdminIslandDetail(this.ownerUuid);
 	}
 
 	@Override
 	protected void initContent() {
-		if (this.detail == null) {
+		if (this.detail() == null) {
 			return;
 		}
 
@@ -66,7 +89,8 @@ public class AdminIslandDetailScreen extends BaseMenuScreen {
 
 	@Override
 	protected void renderContent(DrawContext context, int mouseX, int mouseY, float delta) {
-		if (this.detail == null) {
+		ClientAdminIslandDetailView detail = this.detail();
+		if (detail == null) {
 			context.drawTextWithShadow(this.textRenderer,
 					Text.translatable("islandcoreclient.admin.island_detail.not_found"), CONTENT_X, TOP_BAR_HEIGHT + 8, 0xAAAAAA);
 			return;
@@ -89,19 +113,19 @@ public class AdminIslandDetailScreen extends BaseMenuScreen {
 		}
 
 		y = drawSectionHeader(context, x, y, "islandcoreclient.admin.island_detail.section_ids");
-		y = drawLine(context, x, y, "islandcoreclient.admin.island_detail.island_id", this.detail.islandId());
-		y = drawLine(context, x, y, "islandcoreclient.admin.island_detail.owner", this.detail.ownerName() + " (" + this.detail.ownerUuid() + ")");
+		y = drawLine(context, x, y, "islandcoreclient.admin.island_detail.island_id", detail.islandId());
+		y = drawLine(context, x, y, "islandcoreclient.admin.island_detail.owner", detail.ownerName() + " (" + detail.ownerUuid() + ")");
 		y += SECTION_GAP;
 
 		y = drawSectionHeader(context, x, y, "islandcoreclient.admin.island_detail.section_location");
-		y = drawLine(context, x, y, "islandcoreclient.admin.island_detail.dimension", this.detail.dimension());
-		y = drawLine(context, x, y, "islandcoreclient.admin.island_detail.grid", this.detail.gridX() + ", " + this.detail.gridZ());
+		y = drawLine(context, x, y, "islandcoreclient.admin.island_detail.dimension", detail.dimension());
+		y = drawLine(context, x, y, "islandcoreclient.admin.island_detail.grid", detail.gridX() + ", " + detail.gridZ());
 		y = drawLine(context, x, y, "islandcoreclient.admin.island_detail.size",
-				this.detail.size() + "/" + this.detail.maxSize() + " (parcela: " + this.detail.plotSize() + ")");
+				detail.size() + "/" + detail.maxSize() + " (parcela: " + detail.plotSize() + ")");
 		y += SECTION_GAP;
 
 		y = drawSectionHeader(context, x, y, "islandcoreclient.admin.island_detail.section_members");
-		for (ClientMemberView member : this.detail.members()) {
+		for (ClientMemberView member : detail.members()) {
 			Text line = Text.literal(member.name() + " ").append(member.role().label())
 					.append(Text.literal(" (" + member.uuid() + ")"));
 			context.drawTextWithShadow(this.textRenderer, line, x, y, BODY_COLOR);
@@ -110,13 +134,13 @@ public class AdminIslandDetailScreen extends BaseMenuScreen {
 		y += SECTION_GAP;
 
 		y = drawSectionHeader(context, x, y, "islandcoreclient.admin.island_detail.section_state");
-		y = drawLine(context, x, y, "islandcoreclient.admin.island_detail.state", this.detail.state());
-		y = drawLine(context, x, y, "islandcoreclient.admin.island_detail.created_at", this.detail.createdAt());
-		y = drawLine(context, x, y, "islandcoreclient.admin.island_detail.updated_at", this.detail.updatedAt());
+		y = drawLine(context, x, y, "islandcoreclient.admin.island_detail.state", detail.state());
+		y = drawLine(context, x, y, "islandcoreclient.admin.island_detail.created_at", detail.createdAt());
+		y = drawLine(context, x, y, "islandcoreclient.admin.island_detail.updated_at", detail.updatedAt());
 		y += SECTION_GAP;
 
 		y = drawSectionHeader(context, x, y, "islandcoreclient.admin.island_detail.section_entities");
-		ClientAdminIslandDetailView.EntityCounts entities = this.detail.entities();
+		ClientAdminIslandDetailView.EntityCounts entities = detail.entities();
 		drawLine(context, x, y, "islandcoreclient.admin.island_detail.entities_players", String.valueOf(entities.players()));
 		y += LINE_HEIGHT;
 		drawLine(context, x, y, "islandcoreclient.admin.island_detail.entities_hostile", String.valueOf(entities.hostile()));
@@ -141,36 +165,47 @@ public class AdminIslandDetailScreen extends BaseMenuScreen {
 	}
 
 	private void onDeleteClicked() {
-		if (this.detail == null) {
+		ClientAdminIslandDetailView detail = this.detail();
+		if (detail == null) {
 			return;
 		}
 		this.client.setScreen(new ConfirmScreen(
 				confirmed -> {
 					if (confirmed) {
-						simulateAdminIslandDeleteRequest();
+						requestDelete();
 					}
 					this.client.setScreen(this);
 				},
 				Text.translatable("islandcoreclient.admin.island_detail.confirm_title"),
 				Text.translatable("islandcoreclient.admin.island_detail.confirm_message",
-						Text.literal(this.detail.ownerName()).formatted(Formatting.BOLD))));
+						Text.literal(detail.ownerName()).formatted(Formatting.BOLD))));
+	}
+
+	private void requestDelete() {
+		ClientPlayNetworking.send(new AdminIslandDeleteC2S(this.ownerUuid));
+		PendingActionTracker.await((success, reasonKey) -> {
+			if (success) {
+				this.pendingDeletionExpiresAtMillis = System.currentTimeMillis() + PENDING_DELETION_WINDOW_SECONDS * 1000L;
+			} else {
+				ClientErrorToasts.showReason(reasonKey);
+			}
+			this.clearAndInit();
+		});
 	}
 
 	private void onConfirmDeleteClicked() {
-		simulateAdminIslandDeleteConfirm();
-		this.close();
-	}
-
-	// TODO: replace with sending AdminIslandDeleteRequestC2S once IslandCore implements the admin
-	// protocol; the server should own the 30s confirmation window, same reasoning as the
-	// player-facing DeleteIslandScreen.
-	private void simulateAdminIslandDeleteRequest() {
-		this.pendingDeletionExpiresAtMillis = System.currentTimeMillis() + PENDING_DELETION_WINDOW_SECONDS * 1000L;
-	}
-
-	// TODO: replace with sending AdminIslandDeleteConfirmC2S and awaiting ActionResultS2C once
-	// IslandCore implements the admin protocol.
-	private void simulateAdminIslandDeleteConfirm() {
-		ClientIslandCache.removeAdminIsland(this.ownerUuid);
+		ClientPlayNetworking.send(new AdminIslandDeleteConfirmC2S(this.ownerUuid));
+		PendingActionTracker.await((success, reasonKey) -> {
+			this.pendingDeletionExpiresAtMillis = 0L;
+			if (success) {
+				// The list screen we're about to return to (this.close() -> parent) has no reason
+				// to know its cached page just lost a row otherwise — mirrors DeleteIslandScreen's
+				// own IslandSnapshotRequestC2S refetch after a successful confirm.
+				ClientPlayNetworking.send(new AdminIslandListRequestC2S(0, AdminIslandListScreen.PAGE_SIZE, ""));
+			} else {
+				ClientErrorToasts.showReason(reasonKey);
+			}
+			this.close();
+		});
 	}
 }
