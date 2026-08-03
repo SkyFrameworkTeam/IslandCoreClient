@@ -124,6 +124,7 @@
 	"islandcoreclient.reason.error.vanilla_dimension_invalid": "Dimensión vanilla desconocida",
 	"islandcoreclient.reason.error.vanilla_reset_already_queued": "Ya hay un reseteo en cola para esa dimensión",
 	"islandcoreclient.reason.error.dimension_state_conflict": "Esa dimensión ya está en proceso de eliminación o regeneración",
+	"islandcoreclient.reason.error.protocol_mismatch": "Este servidor usa una versión distinta de protocolo de IslandCore. Actualiza tu mod de cliente",
 
 	"islandcoreclient.delete.title": "Eliminar isla",
 	"islandcoreclient.delete.warning_line1": "¡Esta acción es irreversible!",

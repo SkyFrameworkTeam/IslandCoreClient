@@ -124,6 +124,7 @@
 	"islandcoreclient.reason.error.vanilla_dimension_invalid": "Unknown vanilla dimension",
 	"islandcoreclient.reason.error.vanilla_reset_already_queued": "There's already a queued reset for that dimension",
 	"islandcoreclient.reason.error.dimension_state_conflict": "That dimension is already being deleted or regenerated",
+	"islandcoreclient.reason.error.protocol_mismatch": "This server is using a different IslandCore protocol version. Update your client mod",
 
 	"islandcoreclient.delete.title": "Delete island",
 	"islandcoreclient.delete.warning_line1": "This action is irreversible!",

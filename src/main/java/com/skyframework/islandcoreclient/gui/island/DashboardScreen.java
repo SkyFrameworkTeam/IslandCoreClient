@@ -25,7 +25,8 @@ import net.minecraft.util.Formatting;
 
 /**
  * Root screen of the IslandCore Client menu. Content below the top bar only appears once the
- * handshake connected; while UNKNOWN/UNSUPPORTED it just reflects that state (see Sprint 1).
+ * handshake connected; while UNKNOWN/UNSUPPORTED/PROTOCOL_MISMATCH it just reflects that state
+ * (see Sprint 1).
  *
  * <p>The Admin tab (Block C) is not a separate Screen: it reuses this same frame/top bar and
  * just swaps which widgets {@link #initContent()} builds and which section
@@ -67,6 +68,12 @@ public class DashboardScreen extends BaseMenuScreen {
 
 	@Override
 	protected void initContent() {
+		if (ClientConnectionState.getStatus() == ClientConnectionState.Status.PROTOCOL_MISMATCH) {
+			// No snapshot request, no admin toggle, no player/admin widgets at all — renderContent
+			// shows only the mismatch message for this status, so nothing here would ever be seen.
+			return;
+		}
+
 		if (ClientConnectionState.getStatus() == ClientConnectionState.Status.CONNECTED) {
 			// Refetch on every (re)entry to this screen — clearAndInit() from the admin toggle,
 			// navigating back from a child screen, or the very first open all run through here —
@@ -185,6 +192,20 @@ public class DashboardScreen extends BaseMenuScreen {
 
 	@Override
 	protected void renderContent(DrawContext context, int mouseX, int mouseY, float delta) {
+		if (ClientConnectionState.getStatus() == ClientConnectionState.Status.PROTOCOL_MISMATCH) {
+			int centerX = this.width / 2;
+			int centerY = this.height / 2;
+			// Split across two lines: the combined sentence is long enough to risk running past
+			// the screen edge with drawCenteredTextWithShadow's single-line rendering.
+			context.drawCenteredTextWithShadow(this.textRenderer,
+					Text.literal("Este servidor usa una versión distinta de protocolo de IslandCore."),
+					centerX, centerY - 6, 0xFFFFFF);
+			context.drawCenteredTextWithShadow(this.textRenderer,
+					Text.literal("Actualiza tu mod de cliente."),
+					centerX, centerY + 6, 0xFFFFFF);
+			return;
+		}
+
 		boolean isOperator = ClientConnectionState.isOperator();
 		this.adminToggleButton.visible = isOperator;
 		this.adminToggleButton.active = isOperator;

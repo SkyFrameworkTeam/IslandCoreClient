@@ -69,11 +69,16 @@ public final class ClientPacketHandlers {
 		registerPayloadTypes();
 
 		ClientPlayNetworking.registerGlobalReceiver(ServerHandshakeS2C.ID, (payload, context) -> {
-			ClientConnectionState.onServerHandshakeReceived(payload.protocolVersion(), payload.isOperator());
-			// The handshake just confirmed this server speaks the IslandCore protocol: fetch the
-			// player's own island (or the empty snapshot) right away so the Dashboard has real
-			// data as soon as it's first opened, instead of waiting for a manual refresh.
-			ClientPlayNetworking.send(new IslandSnapshotRequestC2S());
+			ClientConnectionState.onServerHandshakeReceived(payload.protocolVersion(), payload.protocolCompatible(), payload.isOperator());
+			if (payload.protocolCompatible()) {
+				// The handshake just confirmed this server speaks a compatible IslandCore protocol:
+				// fetch the player's own island (or the empty snapshot) right away so the Dashboard
+				// has real data as soon as it's first opened, instead of waiting for a manual refresh.
+				ClientPlayNetworking.send(new IslandSnapshotRequestC2S());
+			}
+			// else: protocolCompatible=false — DashboardScreen shows a mismatch message and renders
+			// nothing else, so there's no screen that would need this data anyway; requesting it
+			// would just be a packet built against a wire format the server may not actually emit.
 		});
 
 		ClientPlayNetworking.registerGlobalReceiver(IslandSnapshotS2C.ID, (payload, context) ->
