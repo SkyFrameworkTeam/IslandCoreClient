@@ -9,6 +9,8 @@ import com.skyframework.islandcoreclient.state.ClientBiomeTierView;
 import com.skyframework.islandcoreclient.state.ClientBiomeView;
 import com.skyframework.islandcoreclient.state.ClientIslandCache;
 
+import java.util.List;
+
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 
 import net.minecraft.client.gui.DrawContext;
@@ -28,9 +30,13 @@ public class BiomeScreen extends BaseMenuScreen {
 	private static final long BIOME_CHANGE_COOLDOWN_SECONDS = 604800L;
 
 	private static final int CONTENT_X = 16;
+	private static final int CONTENT_RIGHT_MARGIN = 16;
 	private static final int LINE_HEIGHT = 11;
 	private static final int SECTION_GAP = 10;
-	private static final int BIOME_BUTTON_WIDTH = 110;
+	// Buttons are sized dynamically per tier between these two bounds (see buttonWidthForTier):
+	// as wide as MAX when a row comfortably fits, shrinking toward MIN before ever wrapping.
+	private static final int BIOME_BUTTON_MIN_WIDTH = 90;
+	private static final int BIOME_BUTTON_MAX_WIDTH = 110;
 	private static final int BIOME_BUTTON_HEIGHT = 20;
 	private static final int BIOME_BUTTON_GAP = 6;
 
@@ -54,26 +60,60 @@ public class BiomeScreen extends BaseMenuScreen {
 		boolean cooldownActive = ClientIslandCache.getBiomeCooldownRemainingSeconds() > 0;
 		String currentBiomeId = ClientIslandCache.getCurrentBiomeId();
 
+		int availableWidth = this.width - CONTENT_X - CONTENT_RIGHT_MARGIN;
+		int maxColumns = computeMaxColumns(availableWidth);
+
 		int y = TOP_BAR_HEIGHT + 8 + LINE_HEIGHT + SECTION_GAP;
 		for (ClientBiomeTierView tier : ClientIslandCache.getBiomeTiers()) {
 			y += LINE_HEIGHT + 4;
-			int x = CONTENT_X;
-			for (ClientBiomeView biome : tier.biomes()) {
+
+			List<ClientBiomeView> biomes = tier.biomes();
+			int columns = columnsForTier(biomes, maxColumns);
+			int buttonWidth = buttonWidthForTier(availableWidth, columns);
+
+			for (int i = 0; i < biomes.size(); i++) {
+				ClientBiomeView biome = biomes.get(i);
 				boolean isCurrent = biome.biomeId().equals(currentBiomeId);
 				Text label = isCurrent ? Text.literal("✓ ").append(biome.label()) : biome.label();
 
+				int col = i % columns;
+				int row = i / columns;
+				int x = CONTENT_X + col * (buttonWidth + BIOME_BUTTON_GAP);
+				int buttonY = y + row * (BIOME_BUTTON_HEIGHT + BIOME_BUTTON_GAP);
+
 				ButtonWidget.Builder builder = ButtonWidget.builder(label, button -> onBiomeClicked(biome))
-						.dimensions(x, y, BIOME_BUTTON_WIDTH, BIOME_BUTTON_HEIGHT);
+						.dimensions(x, buttonY, buttonWidth, BIOME_BUTTON_HEIGHT);
 				if (tier.permissionLabel() != null) {
 					builder = builder.tooltip(Tooltip.of(tier.permissionLabel()));
 				}
 				ButtonWidget button = this.addDrawableChild(builder.build());
 				button.active = tier.unlocked() && !cooldownActive;
-
-				x += BIOME_BUTTON_WIDTH + BIOME_BUTTON_GAP;
 			}
-			y += BIOME_BUTTON_HEIGHT + SECTION_GAP;
+
+			int rows = rowsForTier(biomes, columns);
+			y += rows * BIOME_BUTTON_HEIGHT + (rows - 1) * BIOME_BUTTON_GAP + SECTION_GAP;
 		}
+	}
+
+	// Max columns a row can hold at all, using the narrowest reasonable button width — this is
+	// what decides whether a tier needs to wrap into multiple rows instead of overflowing the
+	// screen. Individual tiers with fewer biomes than this use fewer, wider columns instead (see
+	// columnsForTier/buttonWidthForTier), so a 3-biome tier isn't stretched into 6 slots.
+	private static int computeMaxColumns(int availableWidth) {
+		return Math.max(1, (availableWidth + BIOME_BUTTON_GAP) / (BIOME_BUTTON_MIN_WIDTH + BIOME_BUTTON_GAP));
+	}
+
+	private static int columnsForTier(List<ClientBiomeView> biomes, int maxColumns) {
+		return Math.max(1, Math.min(biomes.size(), maxColumns));
+	}
+
+	private static int rowsForTier(List<ClientBiomeView> biomes, int columns) {
+		return biomes.isEmpty() ? 1 : (biomes.size() + columns - 1) / columns;
+	}
+
+	private static int buttonWidthForTier(int availableWidth, int columns) {
+		int width = (availableWidth - (columns - 1) * BIOME_BUTTON_GAP) / columns;
+		return Math.min(BIOME_BUTTON_MAX_WIDTH, width);
 	}
 
 	@Override
@@ -82,6 +122,9 @@ public class BiomeScreen extends BaseMenuScreen {
 		Text cooldownText = remaining > 0
 				? Text.translatable("islandcoreclient.biome.cooldown_active", formatCooldown(remaining))
 				: Text.translatable("islandcoreclient.biome.available_now");
+
+		int availableWidth = this.width - CONTENT_X - CONTENT_RIGHT_MARGIN;
+		int maxColumns = computeMaxColumns(availableWidth);
 
 		int y = TOP_BAR_HEIGHT + 8;
 		context.drawTextWithShadow(this.textRenderer, cooldownText, CONTENT_X, y, 0xFFFFFF);
@@ -93,7 +136,10 @@ public class BiomeScreen extends BaseMenuScreen {
 				title = title.copy().append(" ").append(Text.translatable("islandcoreclient.biome.locked_suffix").formatted(Formatting.RED));
 			}
 			context.drawTextWithShadow(this.textRenderer, title, CONTENT_X, y, 0xFFFFFF);
-			y += LINE_HEIGHT + 4 + BIOME_BUTTON_HEIGHT + SECTION_GAP;
+
+			int columns = columnsForTier(tier.biomes(), maxColumns);
+			int rows = rowsForTier(tier.biomes(), columns);
+			y += LINE_HEIGHT + 4 + rows * BIOME_BUTTON_HEIGHT + (rows - 1) * BIOME_BUTTON_GAP + SECTION_GAP;
 		}
 	}
 

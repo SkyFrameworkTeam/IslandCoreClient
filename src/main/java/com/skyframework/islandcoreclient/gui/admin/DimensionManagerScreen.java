@@ -54,6 +54,8 @@ public class DimensionManagerScreen extends BaseMenuScreen {
 	private static final int ROW_GAP = 4;
 	private static final int LIST_START_Y = TOP_BAR_HEIGHT + 8;
 	private static final int SUB_BACK_Y = TOP_BAR_HEIGHT + 6;
+	private static final int TOP_BAR_ACTION_WIDTH = 90;
+	private static final int TOP_BAR_ACTION_HEIGHT = 20;
 
 	private Mode mode = Mode.LIST;
 	@Nullable
@@ -168,6 +170,17 @@ public class DimensionManagerScreen extends BaseMenuScreen {
 	private void initCreateContent() {
 		addBackToListButton();
 
+		// Lives in the top bar's free right-hand space (same slot/height DashboardScreen uses for
+		// its admin toggle) instead of at the bottom of the form: the form's fields alone already
+		// fill most of a normal-sized window, and a bottom button would be unreachable without
+		// scrolling, which this screen doesn't support.
+		this.addDrawableChild(ButtonWidget.builder(
+						Text.translatable("islandcoreclient.admin.dimension_manager.confirm_create_button"),
+						button -> onCreateClicked())
+				.dimensions(this.width - 8 - TOP_BAR_ACTION_WIDTH, (TOP_BAR_HEIGHT - TOP_BAR_ACTION_HEIGHT) / 2,
+						TOP_BAR_ACTION_WIDTH, TOP_BAR_ACTION_HEIGHT)
+				.build());
+
 		int y = SUB_BACK_Y + 24;
 		this.idField = new TextFieldWidget(this.textRenderer, CONTENT_X, y, 200, 20,
 				Text.translatable("islandcoreclient.admin.dimension_manager.id_field"));
@@ -209,13 +222,6 @@ public class DimensionManagerScreen extends BaseMenuScreen {
 		this.seedField.setEditable(!this.randomSeed);
 		this.seedField.active = !this.randomSeed;
 		this.addDrawableChild(this.seedField);
-
-		y += 28;
-		this.addDrawableChild(ButtonWidget.builder(
-						Text.translatable("islandcoreclient.admin.dimension_manager.confirm_create_button"),
-						button -> onCreateClicked())
-				.dimensions(CONTENT_X, y, 150, 20)
-				.build());
 	}
 
 	@Override
