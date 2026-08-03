@@ -4,6 +4,7 @@ import com.skyframework.islandcoreclient.network.admin.dimension.DimensionDetail
 import com.skyframework.islandcoreclient.network.admin.dimension.DimensionListS2C;
 import com.skyframework.islandcoreclient.network.admin.island.AdminIslandDetailS2C;
 import com.skyframework.islandcoreclient.network.admin.island.AdminIslandListS2C;
+import com.skyframework.islandcoreclient.network.admin.spawn.SpawnBuildProtectionStatusS2C;
 import com.skyframework.islandcoreclient.network.admin.spawn.SpawnStatusS2C;
 import com.skyframework.islandcoreclient.network.admin.vanilla.VanillaResetListS2C;
 import com.skyframework.islandcoreclient.network.biome.BiomeTiersS2C;
@@ -101,6 +102,11 @@ public final class ClientIslandCache {
 	private static volatile int spawnSize = 0;
 	@Nullable
 	private static volatile BlockPos spawnHomeLocation = null;
+
+	// true (matching BUILD_PROTECTION's own server-side default) until the first real
+	// SpawnBuildProtectionStatusS2C arrives — see SpawnManagerScreen's constructor.
+	private static volatile boolean spawnBuildProtectionEnabled = true;
+	private static volatile List<ClientMemberView> spawnAuthorizedPlayers = List.of();
 
 	private static volatile List<ClientDimensionView> dimensions = new ArrayList<>();
 
@@ -341,7 +347,8 @@ public final class ClientIslandCache {
 		List<ClientAdminIslandSummaryView> mapped = new ArrayList<>();
 		for (AdminIslandListS2C.IslandEntry entry : snapshot.islands()) {
 			mapped.add(new ClientAdminIslandSummaryView(entry.ownerUuid(), entry.ownerName(), entry.size(),
-					entry.maxSize(), entry.type(), entry.currentBiomeId(), entry.state(), entry.memberCount()));
+					entry.maxSize(), entry.type(), entry.currentBiomeId(), entry.state(), entry.memberCount(),
+					entry.isSpawnIsland()));
 		}
 		adminIslands = List.copyOf(mapped);
 		adminIslandsTotalPages = snapshot.totalPages();
@@ -404,6 +411,29 @@ public final class ClientIslandCache {
 	@Nullable
 	public static BlockPos getSpawnHomeLocation() {
 		return spawnHomeLocation;
+	}
+
+	public static void applySpawnBuildProtectionStatus(SpawnBuildProtectionStatusS2C status) {
+		spawnBuildProtectionEnabled = status.enabled();
+		List<ClientMemberView> mapped = new ArrayList<>();
+		for (SpawnBuildProtectionStatusS2C.AuthorizedPlayerEntry entry : status.authorizedPlayers()) {
+			mapped.add(new ClientMemberView(entry.uuid(), entry.name(), ClientMemberView.Role.valueOf(entry.role())));
+		}
+		spawnAuthorizedPlayers = List.copyOf(mapped);
+	}
+
+	public static boolean getSpawnBuildProtectionEnabled() {
+		return spawnBuildProtectionEnabled;
+	}
+
+	// Optimistic update for ToggleRow's immediate flip, reverted by SpawnManagerScreen on failure —
+	// same pattern SettingsScreen#onSettingToggled already uses for IslandSettingsUpdateC2S.
+	public static void setSpawnBuildProtectionEnabled(boolean enabled) {
+		spawnBuildProtectionEnabled = enabled;
+	}
+
+	public static List<ClientMemberView> getSpawnAuthorizedPlayers() {
+		return spawnAuthorizedPlayers;
 	}
 
 	public static void applyDimensionList(DimensionListS2C snapshot) {

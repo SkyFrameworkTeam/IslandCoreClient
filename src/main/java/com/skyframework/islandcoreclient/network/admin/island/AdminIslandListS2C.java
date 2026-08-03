@@ -12,7 +12,7 @@ import java.util.List;
 import java.util.UUID;
 
 // Mirrors the server's net.admin.island.AdminIslandListS2C exactly: same 3 fields (islands,
-// totalPages, currentPage) and same nested IslandEntry (8 fields, past PacketCodec.tuple's
+// totalPages, currentPage) and same nested IslandEntry (9 fields, past PacketCodec.tuple's
 // 6-argument limit, hand-written with PacketCodec.of like IslandSnapshotS2C).
 public record AdminIslandListS2C(List<IslandEntry> islands, int totalPages, int currentPage) implements CustomPayload {
 
@@ -35,7 +35,9 @@ public record AdminIslandListS2C(List<IslandEntry> islands, int totalPages, int 
 	}
 
 	// Wire field order: ownerUuid, ownerName, size, maxSize, type, currentBiomeId (a LIVE lookup of
-	// the biome at the island's center, not any locally-tracked value), state, memberCount.
+	// the biome at the island's center, not any locally-tracked value), state, memberCount,
+	// isSpawnIsland (NEW — true when ownerUuid is the server's synthetic Island.SERVER_OWNER_UUID;
+	// see AdminIslandListScreen for how this replaces ownerName in the row label).
 	public record IslandEntry(
 			UUID ownerUuid,
 			String ownerName,
@@ -44,7 +46,8 @@ public record AdminIslandListS2C(List<IslandEntry> islands, int totalPages, int 
 			String type,
 			String currentBiomeId,
 			String state,
-			int memberCount
+			int memberCount,
+			boolean isSpawnIsland
 	) {
 		public static final PacketCodec<RegistryByteBuf, IslandEntry> CODEC = PacketCodec.of(
 				(value, buf) -> {
@@ -56,6 +59,7 @@ public record AdminIslandListS2C(List<IslandEntry> islands, int totalPages, int 
 					PacketCodecs.STRING.encode(buf, value.currentBiomeId());
 					PacketCodecs.STRING.encode(buf, value.state());
 					PacketCodecs.VAR_INT.encode(buf, value.memberCount());
+					PacketCodecs.BOOL.encode(buf, value.isSpawnIsland());
 				},
 				buf -> new IslandEntry(
 						Uuids.PACKET_CODEC.decode(buf),
@@ -65,7 +69,8 @@ public record AdminIslandListS2C(List<IslandEntry> islands, int totalPages, int 
 						PacketCodecs.STRING.decode(buf),
 						PacketCodecs.STRING.decode(buf),
 						PacketCodecs.STRING.decode(buf),
-						PacketCodecs.VAR_INT.decode(buf)
+						PacketCodecs.VAR_INT.decode(buf),
+						PacketCodecs.BOOL.decode(buf)
 				)
 		);
 	}

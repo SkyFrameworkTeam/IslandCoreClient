@@ -149,6 +149,7 @@
 	"islandcoreclient.admin.island_list.prev_page": "◀ Previous",
 	"islandcoreclient.admin.island_list.next_page": "Next ▶",
 	"islandcoreclient.admin.island_list.page_indicator": "Page %s of %s",
+	"islandcoreclient.admin.island_list.spawn_label": "SPAWN",
 
 	"islandcoreclient.admin.island_detail.title": "Island detail",
 	"islandcoreclient.admin.island_detail.not_found": "Requested island not found.",
@@ -187,6 +188,11 @@
 	"islandcoreclient.admin.spawn.set_home_button": "Set home here",
 	"islandcoreclient.admin.spawn.home_current": "Current home: (%s, %s, %s)",
 	"islandcoreclient.admin.spawn.home_not_set": "Home: not set",
+	"islandcoreclient.admin.spawn.build_protection_toggle": "Build protection",
+	"islandcoreclient.admin.spawn.authorized_heading": "Authorized players",
+	"islandcoreclient.admin.spawn.authorized_remove": "Remove",
+	"islandcoreclient.admin.spawn.authorized_add_placeholder": "Player name...",
+	"islandcoreclient.admin.spawn.authorized_add_button": "Add",
 
 	"islandcoreclient.admin.dimension_manager.title": "Dimension Manager",
 	"islandcoreclient.admin.dimension_manager.empty": "No dimensions registered.",

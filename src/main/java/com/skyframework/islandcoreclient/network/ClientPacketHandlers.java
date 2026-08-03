@@ -22,6 +22,11 @@ import com.skyframework.islandcoreclient.network.admin.island.AdminIslandDetailR
 import com.skyframework.islandcoreclient.network.admin.island.AdminIslandDetailS2C;
 import com.skyframework.islandcoreclient.network.admin.island.AdminIslandListRequestC2S;
 import com.skyframework.islandcoreclient.network.admin.island.AdminIslandListS2C;
+import com.skyframework.islandcoreclient.network.admin.spawn.SpawnAuthorizedPlayerAddC2S;
+import com.skyframework.islandcoreclient.network.admin.spawn.SpawnAuthorizedPlayerRemoveC2S;
+import com.skyframework.islandcoreclient.network.admin.spawn.SpawnBuildProtectionSetC2S;
+import com.skyframework.islandcoreclient.network.admin.spawn.SpawnBuildProtectionStatusRequestC2S;
+import com.skyframework.islandcoreclient.network.admin.spawn.SpawnBuildProtectionStatusS2C;
 import com.skyframework.islandcoreclient.network.admin.spawn.SpawnIslandCreateC2S;
 import com.skyframework.islandcoreclient.network.admin.spawn.SpawnIslandResizeC2S;
 import com.skyframework.islandcoreclient.network.admin.spawn.SpawnIslandSetHomeC2S;
@@ -168,6 +173,11 @@ public final class ClientPacketHandlers {
 		PayloadTypeRegistry.playC2S().register(SpawnIslandCreateC2S.ID, SpawnIslandCreateC2S.CODEC);
 		PayloadTypeRegistry.playC2S().register(SpawnIslandResizeC2S.ID, SpawnIslandResizeC2S.CODEC);
 		PayloadTypeRegistry.playC2S().register(SpawnIslandSetHomeC2S.ID, SpawnIslandSetHomeC2S.CODEC);
+		PayloadTypeRegistry.playC2S().register(SpawnBuildProtectionStatusRequestC2S.ID, SpawnBuildProtectionStatusRequestC2S.CODEC);
+		PayloadTypeRegistry.playS2C().register(SpawnBuildProtectionStatusS2C.ID, SpawnBuildProtectionStatusS2C.CODEC);
+		PayloadTypeRegistry.playC2S().register(SpawnBuildProtectionSetC2S.ID, SpawnBuildProtectionSetC2S.CODEC);
+		PayloadTypeRegistry.playC2S().register(SpawnAuthorizedPlayerAddC2S.ID, SpawnAuthorizedPlayerAddC2S.CODEC);
+		PayloadTypeRegistry.playC2S().register(SpawnAuthorizedPlayerRemoveC2S.ID, SpawnAuthorizedPlayerRemoveC2S.CODEC);
 
 		PayloadTypeRegistry.playC2S().register(DimensionListRequestC2S.ID, DimensionListRequestC2S.CODEC);
 		PayloadTypeRegistry.playS2C().register(DimensionListS2C.ID, DimensionListS2C.CODEC);
@@ -207,6 +217,13 @@ public final class ClientPacketHandlers {
 
 		ClientPlayNetworking.registerGlobalReceiver(SpawnStatusS2C.ID, (payload, context) -> {
 			ClientIslandCache.applySpawnStatus(payload);
+			if (MinecraftClient.getInstance().currentScreen instanceof SpawnManagerScreen screen) {
+				screen.refreshFromNetwork();
+			}
+		});
+
+		ClientPlayNetworking.registerGlobalReceiver(SpawnBuildProtectionStatusS2C.ID, (payload, context) -> {
+			ClientIslandCache.applySpawnBuildProtectionStatus(payload);
 			if (MinecraftClient.getInstance().currentScreen instanceof SpawnManagerScreen screen) {
 				screen.refreshFromNetwork();
 			}

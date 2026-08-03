@@ -11,9 +11,10 @@ public final class ClientAdminIslandSummaryView {
 	private final String currentBiomeId;
 	private final String state;
 	private final int memberCount;
+	private final boolean isSpawnIsland;
 
 	public ClientAdminIslandSummaryView(UUID ownerUuid, String ownerName, int size, int maxSize,
-			String type, String currentBiomeId, String state, int memberCount) {
+			String type, String currentBiomeId, String state, int memberCount, boolean isSpawnIsland) {
 		this.ownerUuid = ownerUuid;
 		this.ownerName = ownerName;
 		this.size = size;
@@ -22,6 +23,7 @@ public final class ClientAdminIslandSummaryView {
 		this.currentBiomeId = currentBiomeId;
 		this.state = state;
 		this.memberCount = memberCount;
+		this.isSpawnIsland = isSpawnIsland;
 	}
 
 	public UUID ownerUuid() {
@@ -56,5 +58,9 @@ public final class ClientAdminIslandSummaryView {
 
 	public int memberCount() {
 		return memberCount;
+	}
+
+	public boolean isSpawnIsland() {
+		return isSpawnIsland;
 	}
 }

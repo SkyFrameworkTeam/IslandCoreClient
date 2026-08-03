@@ -70,9 +70,16 @@ public class AdminIslandListScreen extends BaseMenuScreen {
 		int y = ROWS_START_Y;
 		for (ClientAdminIslandSummaryView summary : summaries) {
 			boolean deleting = "DELETING".equals(summary.state());
-			Text label = Text.literal(summary.ownerName() + " — " + summary.size() + "/" + summary.maxSize()
+			// isSpawnIsland=true: ownerName would otherwise show the server's synthetic all-zero
+			// owner UUID unresolved (Island.SERVER_OWNER_UUID never maps to a real player profile).
+			String ownerLabel = summary.isSpawnIsland()
+					? Text.translatable("islandcoreclient.admin.island_list.spawn_label").getString()
+					: summary.ownerName();
+			Text label = Text.literal(ownerLabel + " — " + summary.size() + "/" + summary.maxSize()
 					+ " " + summary.type() + " · " + summary.state() + " · " + summary.memberCount() + " miembros");
-			if (deleting) {
+			if (summary.isSpawnIsland()) {
+				label = label.copy().formatted(Formatting.GOLD);
+			} else if (deleting) {
 				label = label.copy().formatted(Formatting.RED);
 			}
 
