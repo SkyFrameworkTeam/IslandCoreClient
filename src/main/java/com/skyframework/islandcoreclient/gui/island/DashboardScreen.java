@@ -5,6 +5,7 @@ import com.skyframework.islandcoreclient.gui.admin.DimensionManagerScreen;
 import com.skyframework.islandcoreclient.gui.admin.SpawnManagerScreen;
 import com.skyframework.islandcoreclient.gui.admin.VanillaResetScreen;
 import com.skyframework.islandcoreclient.gui.common.BaseMenuScreen;
+import com.skyframework.islandcoreclient.gui.common.TimeFormat;
 import com.skyframework.islandcoreclient.network.ClientErrorToasts;
 import com.skyframework.islandcoreclient.network.PendingActionTracker;
 import com.skyframework.islandcoreclient.network.island.IslandCreateC2S;
@@ -14,7 +15,6 @@ import com.skyframework.islandcoreclient.state.ClientConnectionState;
 import com.skyframework.islandcoreclient.state.ClientIncomingInviteView;
 import com.skyframework.islandcoreclient.state.ClientIslandCache;
 import com.skyframework.islandcoreclient.state.ClientMemberView;
-import com.skyframework.islandcoreclient.state.DebugSimulationHelpers;
 
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 
@@ -90,23 +90,6 @@ public class DashboardScreen extends BaseMenuScreen {
 		} else {
 			initPlayerContent();
 		}
-
-		// DEBUG - quitar cuando haya snapshot real. Sprint "Integración de red real": el handshake,
-		// isOperator, el snapshot de isla, los teletransportes y ahora todo el bloque Admin (islas,
-		// Spawn, Dimension Manager, reseteo vanilla) ya usan red real, así que los botones que
-		// forzaban esos estados (Forzar conectado, Cooldowns TP, Alternar sin isla, Forzar admin,
-		// Alternar spawn) se han quitado. Estos dos siguen aquí porque NINGÚN paquete actual expone
-		// invitaciones entrantes ni el cooldown de cambio de bioma (ver ClientIslandCache).
-		this.addDrawableChild(ButtonWidget.builder(
-						Text.literal("[DEBUG] Invitación"),
-						button -> DebugSimulationHelpers.toggleIncomingInviteDebug())
-				.dimensions(8, this.height - 20, 120, 16)
-				.build());
-		this.addDrawableChild(ButtonWidget.builder(
-						Text.literal("[DEBUG] Cooldown bioma"),
-						button -> DebugSimulationHelpers.toggleBiomeCooldownDebug())
-				.dimensions(132, this.height - 20, 140, 16)
-				.build());
 	}
 
 	private void initPlayerContent() {
@@ -261,8 +244,9 @@ public class DashboardScreen extends BaseMenuScreen {
 
 		if (hasInvite) {
 			context.fill(16, INVITE_BANNER_Y, this.width - 16, INVITE_BANNER_Y + INVITE_BANNER_HEIGHT, 0xC0224488);
+			String remaining = TimeFormat.minutesSeconds(invite.expiresInSeconds());
 			context.drawTextWithShadow(this.textRenderer,
-					Text.translatable("islandcoreclient.dashboard.invite_banner", invite.fromName()),
+					Text.translatable("islandcoreclient.dashboard.invite_banner", invite.fromName(), remaining),
 					20, INVITE_BANNER_Y + (INVITE_BANNER_HEIGHT - this.textRenderer.fontHeight) / 2, 0xFFFFFF);
 		}
 

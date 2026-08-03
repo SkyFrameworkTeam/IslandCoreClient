@@ -18,7 +18,7 @@
 	"islandcoreclient.dashboard.my_island_button": "My island",
 	"islandcoreclient.dashboard.invite_accept": "Accept",
 	"islandcoreclient.dashboard.invite_ignore": "Ignore",
-	"islandcoreclient.dashboard.invite_banner": "%s has invited you to their island",
+	"islandcoreclient.dashboard.invite_banner": "%s has invited you to their island (%s)",
 	"islandcoreclient.dashboard.summary_size": "Size: %s/%s",
 	"islandcoreclient.dashboard.summary_biome": "Biome: %s",
 	"islandcoreclient.dashboard.summary_state": "State: %s",

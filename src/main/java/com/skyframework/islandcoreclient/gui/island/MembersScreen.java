@@ -3,6 +3,7 @@ package com.skyframework.islandcoreclient.gui.island;
 import java.util.UUID;
 
 import com.skyframework.islandcoreclient.gui.common.BaseMenuScreen;
+import com.skyframework.islandcoreclient.gui.common.TimeFormat;
 import com.skyframework.islandcoreclient.network.ClientErrorToasts;
 import com.skyframework.islandcoreclient.network.PendingActionTracker;
 import com.skyframework.islandcoreclient.network.island.IslandSnapshotRequestC2S;
@@ -95,7 +96,7 @@ public class MembersScreen extends BaseMenuScreen {
 		y += LINE_HEIGHT;
 		for (ClientPendingInviteView invite : ClientIslandCache.getPendingInvites()) {
 			long remaining = invite.getRemainingSeconds();
-			String time = String.format("%02d:%02d", remaining / 60, remaining % 60);
+			String time = TimeFormat.minutesSeconds(remaining);
 			context.drawTextWithShadow(this.textRenderer, Text.literal(invite.targetName() + " (" + time + ")"), x, y, 0x999999);
 			y += LINE_HEIGHT;
 		}

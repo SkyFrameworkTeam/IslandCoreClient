@@ -58,9 +58,9 @@ public final class ClientIslandCache {
 	private static final List<ClientMemberView> MEMBERS = new ArrayList<>();
 	private static final List<ClientPendingInviteView> PENDING_INVITES = new ArrayList<>();
 
-	// No IslandSnapshotS2C field (nor any other packet) carries incoming invites (invites where
-	// the local player is the target, not the island owner) — this stays local-only/simulated,
-	// see DebugSimulationHelpers#toggleIncomingInviteDebug.
+	// Real, populated from IslandSnapshotS2C#incomingInvite (see applySnapshot below) — an invite
+	// where the local player is the target, not the island owner (contrast PENDING_INVITES above,
+	// which lists invites the player's OWN island sent out).
 	@Nullable
 	private static volatile ClientIncomingInviteView incomingInvite = null;
 
@@ -69,9 +69,9 @@ public final class ClientIslandCache {
 	// currentBiomeId now comes from the real IslandSnapshotS2C (populated in applySnapshot below).
 	// BiomeScreen also writes it optimistically right after a successful biome-change request, for
 	// immediate feedback before the next snapshot reconciles it — see BiomeScreen wiring notes.
-	// No packet exposes the biome-change cooldown remaining, though: that field stays
-	// local/optimistic only, set from the outcome of a change the player themselves just made
-	// this session.
+	// biomeCooldownEndMillis follows the same pattern: BiomeScreen sets it optimistically right
+	// after a successful change, and applySnapshot reconciles it from the real
+	// biomeCooldownRemainingSeconds field on every fresh snapshot (the server value always wins).
 	@Nullable
 	private static volatile String currentBiomeId = null;
 	private static volatile long biomeCooldownEndMillis = 0L;
@@ -131,6 +131,19 @@ public final class ClientIslandCache {
 		currentBiomeId = snapshot.currentBiomeId();
 		homeSet = snapshot.home().isPresent();
 		islandState = snapshot.state();
+
+		// Real value from the server is now the single source of truth, reconciling whatever
+		// BiomeScreen may have set optimistically right after a change this session (see its own
+		// startBiomeCooldown call) on every fresh snapshot.
+		if (snapshot.biomeCooldownRemainingSeconds() > 0) {
+			startBiomeCooldown(snapshot.biomeCooldownRemainingSeconds());
+		} else {
+			clearBiomeCooldown();
+		}
+
+		incomingInvite = snapshot.incomingInvite()
+				.map(entry -> new ClientIncomingInviteView(entry.inviterName(), entry.expiresInSeconds()))
+				.orElse(null);
 
 		MEMBERS.clear();
 		for (IslandSnapshotS2C.MemberEntry entry : snapshot.members()) {

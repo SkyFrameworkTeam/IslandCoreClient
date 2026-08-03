@@ -14,23 +14,30 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
-// Mirrors the server's net.island.IslandSnapshotS2C exactly: same 11 fields in the same order,
+// Mirrors the server's net.island.IslandSnapshotS2C exactly: same 13 fields in the same order,
 // same hand-written PacketCodec.of (past PacketCodec.tuple's 6-argument limit), same nested
 // per-entry records/codecs. type is the island's IslandType id (server-side always "plains" for
 // now — a distinct, mostly-unused concept from the current biome, NOT what BiomeScreen changes).
 // currentBiomeId is the real current biome (e.g. "minecraft:jungle", or IslandData.DEFAULT_BIOME_ID
 // = "minecraft:the_void" for an island that's never had /island biome used on it) — this is what
 // BiomeScreen's "current" marker and Dashboard's summary line should read, not type.
+//
+// Wire format changed: biomeCooldownRemainingSeconds was inserted after currentBiomeId (grouped
+// with the other biome field), and incomingInvite was inserted after pendingInvites (grouped with
+// the other invite field). Both are now the real, server-computed values — see ClientIslandCache
+// #applySnapshot, which no longer needs to simulate either locally.
 public record IslandSnapshotS2C(
 		boolean exists,
 		int size,
 		int maxSize,
 		String type,
 		String currentBiomeId,
+		int biomeCooldownRemainingSeconds,
 		Optional<BlockPos> home,
 		String state,
 		List<MemberEntry> members,
 		List<PendingInviteEntry> pendingInvites,
+		Optional<IncomingInviteEntry> incomingInvite,
 		List<SettingEntry> settings,
 		EntityCounts entities
 ) implements CustomPayload {
@@ -39,6 +46,10 @@ public record IslandSnapshotS2C(
 			new CustomPayload.Id<>(Identifier.of("islandcore", "island_snapshot_s2c"));
 
 	private static final PacketCodec<ByteBuf, Optional<BlockPos>> HOME_CODEC = PacketCodecs.optional(BlockPos.PACKET_CODEC);
+	// IncomingInviteEntry.CODEC is already typed over RegistryByteBuf (like every other nested
+	// entry here), so unlike HOME_CODEC above this needs no ByteBuf/RegistryByteBuf split.
+	private static final PacketCodec<RegistryByteBuf, Optional<IncomingInviteEntry>> INCOMING_INVITE_CODEC =
+			PacketCodecs.optional(IncomingInviteEntry.CODEC);
 	private static final PacketCodec<RegistryByteBuf, List<MemberEntry>> MEMBER_LIST_CODEC =
 			PacketCodecs.collection(ArrayList::new, MemberEntry.CODEC);
 	private static final PacketCodec<RegistryByteBuf, List<PendingInviteEntry>> PENDING_INVITE_LIST_CODEC =
@@ -53,10 +64,12 @@ public record IslandSnapshotS2C(
 				PacketCodecs.VAR_INT.encode(buf, value.maxSize());
 				PacketCodecs.STRING.encode(buf, value.type());
 				PacketCodecs.STRING.encode(buf, value.currentBiomeId());
+				PacketCodecs.VAR_INT.encode(buf, value.biomeCooldownRemainingSeconds());
 				HOME_CODEC.encode(buf, value.home());
 				PacketCodecs.STRING.encode(buf, value.state());
 				MEMBER_LIST_CODEC.encode(buf, value.members());
 				PENDING_INVITE_LIST_CODEC.encode(buf, value.pendingInvites());
+				INCOMING_INVITE_CODEC.encode(buf, value.incomingInvite());
 				SETTING_LIST_CODEC.encode(buf, value.settings());
 				EntityCounts.CODEC.encode(buf, value.entities());
 			},
@@ -66,10 +79,12 @@ public record IslandSnapshotS2C(
 					PacketCodecs.VAR_INT.decode(buf),
 					PacketCodecs.STRING.decode(buf),
 					PacketCodecs.STRING.decode(buf),
+					PacketCodecs.VAR_INT.decode(buf),
 					HOME_CODEC.decode(buf),
 					PacketCodecs.STRING.decode(buf),
 					MEMBER_LIST_CODEC.decode(buf),
 					PENDING_INVITE_LIST_CODEC.decode(buf),
+					INCOMING_INVITE_CODEC.decode(buf),
 					SETTING_LIST_CODEC.decode(buf),
 					EntityCounts.CODEC.decode(buf)
 			)
@@ -94,6 +109,17 @@ public record IslandSnapshotS2C(
 				PacketCodecs.STRING, PendingInviteEntry::targetName,
 				PacketCodecs.VAR_INT, PendingInviteEntry::expiresInSeconds,
 				PendingInviteEntry::new
+		);
+	}
+
+	// An invite where the receiving player is the INVITEE, not the island's owner (contrast
+	// PendingInviteEntry above, which lists invites the player's own island sent out). Empty
+	// (IslandSnapshotS2C#incomingInvite) means no pending incoming invite, or it already expired.
+	public record IncomingInviteEntry(String inviterName, int expiresInSeconds) {
+		public static final PacketCodec<RegistryByteBuf, IncomingInviteEntry> CODEC = PacketCodec.tuple(
+				PacketCodecs.STRING, IncomingInviteEntry::inviterName,
+				PacketCodecs.VAR_INT, IncomingInviteEntry::expiresInSeconds,
+				IncomingInviteEntry::new
 		);
 	}
 
