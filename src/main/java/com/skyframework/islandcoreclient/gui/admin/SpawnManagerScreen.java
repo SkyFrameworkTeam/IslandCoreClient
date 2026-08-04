@@ -1,13 +1,10 @@
 package com.skyframework.islandcoreclient.gui.admin;
 
-import java.util.UUID;
-
 import com.skyframework.islandcoreclient.gui.common.BaseMenuScreen;
 import com.skyframework.islandcoreclient.gui.common.ToggleRow;
 import com.skyframework.islandcoreclient.network.ClientErrorToasts;
 import com.skyframework.islandcoreclient.network.PendingActionTracker;
 import com.skyframework.islandcoreclient.network.admin.spawn.SpawnAuthorizedPlayerAddC2S;
-import com.skyframework.islandcoreclient.network.admin.spawn.SpawnAuthorizedPlayerRemoveC2S;
 import com.skyframework.islandcoreclient.network.admin.spawn.SpawnBuildProtectionSetC2S;
 import com.skyframework.islandcoreclient.network.admin.spawn.SpawnBuildProtectionStatusRequestC2S;
 import com.skyframework.islandcoreclient.network.admin.spawn.SpawnIslandCreateC2S;
@@ -15,7 +12,6 @@ import com.skyframework.islandcoreclient.network.admin.spawn.SpawnIslandResizeC2
 import com.skyframework.islandcoreclient.network.admin.spawn.SpawnIslandSetHomeC2S;
 import com.skyframework.islandcoreclient.network.admin.spawn.SpawnStatusRequestC2S;
 import com.skyframework.islandcoreclient.state.ClientIslandCache;
-import com.skyframework.islandcoreclient.state.ClientMemberView;
 
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 
@@ -32,9 +28,16 @@ import net.minecraft.util.math.BlockPos;
  * server reads the sender's actual position and validates it itself (bounds + dimension, same as
  * "/island admin spawn sethome"); this screen must never read/send a local BlockPos for it.
  *
- * <p>The build-protection section (toggle + authorized players list) only appears once the Spawn
- * island exists — same condition {@link #initResizeForm()} already uses instead of
- * {@link #initCreateForm()} — since there is nothing to protect/authorize before that.
+ * <p>The build-protection section only appears once the Spawn island exists — same condition
+ * {@link #initResizeForm()} already uses instead of {@link #initCreateForm()} — since there is
+ * nothing to protect/authorize before that. The authorized-players LIST itself lives on its own
+ * dedicated page ({@link SpawnAuthorizedPlayersScreen}, same fix already applied to
+ * {@link AdminIslandDetailScreen}'s member list), reached via a "Ver jugadores autorizados (N)"
+ * button that lives in the TOP BAR's free right-hand slot — same slot/height DashboardScreen's
+ * admin toggle and DimensionManagerScreen's create button already use — instead of anywhere in the
+ * scrollable content area, so it never competes with size/sethome/toggle/add-field for room. Only
+ * the toggle and the "add authorized player" field/button — a quick action that doesn't warrant a
+ * screen switch — stay in the content area, in the left column with this screen's other controls.
  */
 public class SpawnManagerScreen extends BaseMenuScreen {
 	private static final int CONTENT_X = 16;
@@ -49,12 +52,12 @@ public class SpawnManagerScreen extends BaseMenuScreen {
 
 	private static final int BUILD_PROTECTION_TOGGLE_WIDTH = 220;
 	private static final int BUILD_PROTECTION_TOGGLE_Y = HOME_BUTTON_Y + FIELD_HEIGHT + 16;
-	private static final int AUTHORIZED_HEADING_Y = BUILD_PROTECTION_TOGGLE_Y + FIELD_HEIGHT + 12;
-	private static final int AUTHORIZED_LIST_START_Y = AUTHORIZED_HEADING_Y + LINE_HEIGHT + 4;
-	private static final int AUTHORIZED_ROW_HEIGHT = 20;
-	private static final int AUTHORIZED_ROW_GAP = 4;
-	private static final int AUTHORIZED_ACTION_BUTTON_WIDTH = 60;
-	private static final int AUTHORIZED_ACTION_BUTTON_HEIGHT = 16;
+
+	// Top bar's free right-hand slot — same slot/height DashboardScreen's admin toggle and
+	// DimensionManagerScreen's create button already use.
+	private static final int TOP_BAR_ACTION_WIDTH = 190;
+	private static final int TOP_BAR_ACTION_HEIGHT = 20;
+
 	private static final int ADD_ROW_HEIGHT = 20;
 
 	private TextFieldWidget sizeField;
@@ -77,10 +80,21 @@ public class SpawnManagerScreen extends BaseMenuScreen {
 	protected void initContent() {
 		if (!ClientIslandCache.spawnExists()) {
 			initCreateForm();
-		} else {
-			initResizeForm();
-			initBuildProtectionSection();
+			return;
 		}
+
+		initResizeForm();
+		initBuildProtectionSection();
+
+		// Top bar, not the content area: frees the content area from having to make room for it
+		// alongside size/sethome/toggle/add-field.
+		int authorizedCount = ClientIslandCache.getSpawnAuthorizedPlayers().size();
+		this.addDrawableChild(ButtonWidget.builder(
+						Text.translatable("islandcoreclient.admin.spawn.view_authorized_button", authorizedCount),
+						button -> onViewAuthorizedClicked())
+				.dimensions(this.width - 8 - TOP_BAR_ACTION_WIDTH, (TOP_BAR_HEIGHT - TOP_BAR_ACTION_HEIGHT) / 2,
+						TOP_BAR_ACTION_WIDTH, TOP_BAR_ACTION_HEIGHT)
+				.build());
 	}
 
 	private void initCreateForm() {
@@ -118,9 +132,6 @@ public class SpawnManagerScreen extends BaseMenuScreen {
 				.build());
 	}
 
-	// Same visual pattern MembersScreen already uses for its member list + invite row: a
-	// right-aligned [Quitar] button per authorized-player row, and a bottom text field + button to
-	// add a new one by name.
 	private void initBuildProtectionSection() {
 		this.addDrawableChild(new ToggleRow(
 				CONTENT_X, BUILD_PROTECTION_TOGGLE_Y, BUILD_PROTECTION_TOGGLE_WIDTH, FIELD_HEIGHT,
@@ -128,18 +139,8 @@ public class SpawnManagerScreen extends BaseMenuScreen {
 				ClientIslandCache.getSpawnBuildProtectionEnabled(), true,
 				this::onBuildProtectionToggled));
 
-		int rowY = AUTHORIZED_LIST_START_Y;
-		int actionsX = this.width - 16 - AUTHORIZED_ACTION_BUTTON_WIDTH;
-		for (ClientMemberView authorized : ClientIslandCache.getSpawnAuthorizedPlayers()) {
-			int buttonY = rowY + (AUTHORIZED_ROW_HEIGHT - AUTHORIZED_ACTION_BUTTON_HEIGHT) / 2;
-			this.addDrawableChild(ButtonWidget.builder(
-							Text.translatable("islandcoreclient.admin.spawn.authorized_remove"),
-							button -> onAuthorizedRemoveClicked(authorized.uuid()))
-					.dimensions(actionsX, buttonY, AUTHORIZED_ACTION_BUTTON_WIDTH, AUTHORIZED_ACTION_BUTTON_HEIGHT)
-					.build());
-			rowY += AUTHORIZED_ROW_HEIGHT + AUTHORIZED_ROW_GAP;
-		}
-
+		// Left column, bottom-pinned: a quick action, so it stays here instead of moving into
+		// SpawnAuthorizedPlayersScreen along with the read-only list.
 		int fieldWidth = 160;
 		int buttonWidth = 70;
 		int addFieldY = this.height - 16 - ADD_ROW_HEIGHT;
@@ -177,17 +178,6 @@ public class SpawnManagerScreen extends BaseMenuScreen {
 				? Text.translatable("islandcoreclient.admin.spawn.home_current", home.getX(), home.getY(), home.getZ())
 				: Text.translatable("islandcoreclient.admin.spawn.home_not_set");
 		context.drawTextWithShadow(this.textRenderer, homeText, CONTENT_X, HOME_WARNING_Y + LINE_HEIGHT, 0xDDDDDD);
-
-		context.drawTextWithShadow(this.textRenderer,
-				Text.translatable("islandcoreclient.admin.spawn.authorized_heading"), CONTENT_X, AUTHORIZED_HEADING_Y, 0xAAAAAA);
-
-		int rowY = AUTHORIZED_LIST_START_Y;
-		for (ClientMemberView authorized : ClientIslandCache.getSpawnAuthorizedPlayers()) {
-			Text line = Text.literal(authorized.name() + " ").append(authorized.role().label());
-			context.drawTextWithShadow(this.textRenderer, line,
-					CONTENT_X, rowY + (AUTHORIZED_ROW_HEIGHT - this.textRenderer.fontHeight) / 2, 0xFFFFFF);
-			rowY += AUTHORIZED_ROW_HEIGHT + AUTHORIZED_ROW_GAP;
-		}
 	}
 
 	private void onCreateClicked() {
@@ -257,6 +247,10 @@ public class SpawnManagerScreen extends BaseMenuScreen {
 		});
 	}
 
+	private void onViewAuthorizedClicked() {
+		this.client.setScreen(new SpawnAuthorizedPlayersScreen(this));
+	}
+
 	private void onAuthorizedAddClicked() {
 		String targetName = this.authorizedNameField.getText().trim();
 		if (targetName.isEmpty()) {
@@ -268,18 +262,6 @@ public class SpawnManagerScreen extends BaseMenuScreen {
 				// The real name/role for the new entry comes back on the next status refresh;
 				// refetch now instead of guessing it locally — same reasoning as MembersScreen's
 				// invite flow.
-				ClientPlayNetworking.send(new SpawnBuildProtectionStatusRequestC2S());
-			} else {
-				ClientErrorToasts.showReason(reasonKey);
-			}
-			this.clearAndInit();
-		});
-	}
-
-	private void onAuthorizedRemoveClicked(UUID targetUuid) {
-		ClientPlayNetworking.send(new SpawnAuthorizedPlayerRemoveC2S(targetUuid));
-		PendingActionTracker.await((success, reasonKey) -> {
-			if (success) {
 				ClientPlayNetworking.send(new SpawnBuildProtectionStatusRequestC2S());
 			} else {
 				ClientErrorToasts.showReason(reasonKey);

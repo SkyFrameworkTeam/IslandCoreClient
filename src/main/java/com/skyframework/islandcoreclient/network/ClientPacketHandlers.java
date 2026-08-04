@@ -2,7 +2,9 @@ package com.skyframework.islandcoreclient.network;
 
 import com.skyframework.islandcoreclient.gui.admin.AdminIslandDetailScreen;
 import com.skyframework.islandcoreclient.gui.admin.AdminIslandListScreen;
+import com.skyframework.islandcoreclient.gui.admin.AdminIslandMembersScreen;
 import com.skyframework.islandcoreclient.gui.admin.DimensionManagerScreen;
+import com.skyframework.islandcoreclient.gui.admin.SpawnAuthorizedPlayersScreen;
 import com.skyframework.islandcoreclient.gui.admin.SpawnManagerScreen;
 import com.skyframework.islandcoreclient.gui.admin.VanillaResetScreen;
 import com.skyframework.islandcoreclient.gui.island.BiomeScreen;
@@ -65,6 +67,7 @@ import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
 
 import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.gui.screen.Screen;
 
 public final class ClientPacketHandlers {
 	private ClientPacketHandlers() {
@@ -210,7 +213,10 @@ public final class ClientPacketHandlers {
 
 		ClientPlayNetworking.registerGlobalReceiver(AdminIslandDetailS2C.ID, (payload, context) -> {
 			ClientIslandCache.applyAdminIslandDetail(payload);
-			if (MinecraftClient.getInstance().currentScreen instanceof AdminIslandDetailScreen screen) {
+			Screen currentScreen = MinecraftClient.getInstance().currentScreen;
+			if (currentScreen instanceof AdminIslandDetailScreen screen) {
+				screen.refreshFromNetwork();
+			} else if (currentScreen instanceof AdminIslandMembersScreen screen) {
 				screen.refreshFromNetwork();
 			}
 		});
@@ -224,7 +230,10 @@ public final class ClientPacketHandlers {
 
 		ClientPlayNetworking.registerGlobalReceiver(SpawnBuildProtectionStatusS2C.ID, (payload, context) -> {
 			ClientIslandCache.applySpawnBuildProtectionStatus(payload);
-			if (MinecraftClient.getInstance().currentScreen instanceof SpawnManagerScreen screen) {
+			Screen currentScreen = MinecraftClient.getInstance().currentScreen;
+			if (currentScreen instanceof SpawnManagerScreen screen) {
+				screen.refreshFromNetwork();
+			} else if (currentScreen instanceof SpawnAuthorizedPlayersScreen screen) {
 				screen.refreshFromNetwork();
 			}
 		});
