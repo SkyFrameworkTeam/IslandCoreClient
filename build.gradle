@@ -129,6 +129,56 @@ tasks.register('release') {
 	}
 }
 
+// syncVersion — keeps this client's mod_version in lockstep with the server project's (the two
+// mods are meant to ship together, and the server is treated as the source of truth here). Runs
+// automatically as part of every `./gradlew build` (see the tasks.named('build') block below);
+// reads the server's gradle.properties LITERALLY — no assumed format/suffix, just whatever string
+// is there — and rewrites this project's gradle.properties only if the value actually differs.
+//
+// Like every doLast that rewrites gradle.properties, this can't retroactively change THIS
+// invocation's own project.version: version = project.mod_version at the top of this file already
+// ran during Gradle's configuration phase, before any task (including this one) executes — same
+// reason the release task above has to shell out to a brand new gradlew process instead of just
+// depending on 'build'. So the jar/fabric.mod.json from the CURRENT `./gradlew build` still embed
+// whichever mod_version was on disk BEFORE this task ran; gradle.properties itself is corrected
+// either way, so the very next build already reads (and embeds) the synced value.
+tasks.register('syncVersion') {
+	group = 'versioning'
+	description = "Copies mod_version from the server project's gradle.properties into this one, if they differ."
+
+	doLast {
+		def serverPropsFile = file('../skyframework-template-1.21.1/gradle.properties')
+		if (!serverPropsFile.exists()) {
+			logger.warn("syncVersion: server gradle.properties not found at ${serverPropsFile} — skipping.")
+			return
+		}
+
+		def serverProps = new Properties()
+		serverPropsFile.withInputStream { serverProps.load(it) }
+		def serverVersion = serverProps.getProperty('mod_version')
+		if (serverVersion == null) {
+			logger.warn("syncVersion: server gradle.properties has no mod_version — skipping.")
+			return
+		}
+
+		if (serverVersion == project.mod_version) {
+			logger.lifecycle("syncVersion: mod_version already matches the server (${serverVersion}).")
+			return
+		}
+
+		def oldVersion = project.mod_version
+		def propsFile = file('gradle.properties')
+		propsFile.text = propsFile.readLines().collect { line ->
+			line.startsWith('mod_version=') ? "mod_version=${serverVersion}" : line
+		}.join('\n') + '\n'
+		logger.lifecycle("syncVersion: mod_version ${oldVersion} -> ${serverVersion} (from server). Takes effect starting the next build.")
+	}
+}
+
+tasks.named('build') {
+	dependsOn 'syncVersion'
+}
+
 // configure the maven publication
 publishing {
 	publications {
