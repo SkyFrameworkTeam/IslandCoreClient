@@ -3,12 +3,15 @@ package com.skyframework.islandcoreclient.network;
 import com.skyframework.islandcoreclient.gui.admin.AdminIslandDetailScreen;
 import com.skyframework.islandcoreclient.gui.admin.AdminIslandListScreen;
 import com.skyframework.islandcoreclient.gui.admin.AdminIslandMembersScreen;
+import com.skyframework.islandcoreclient.gui.admin.DefaultConfigScreen;
 import com.skyframework.islandcoreclient.gui.admin.DimensionManagerScreen;
 import com.skyframework.islandcoreclient.gui.admin.SpawnAuthorizedPlayersScreen;
 import com.skyframework.islandcoreclient.gui.admin.SpawnManagerScreen;
 import com.skyframework.islandcoreclient.gui.admin.VanillaResetScreen;
 import com.skyframework.islandcoreclient.gui.island.BiomeScreen;
+import com.skyframework.islandcoreclient.gui.island.SettingsScreen;
 import com.skyframework.islandcoreclient.gui.island.TeleportsScreen;
+import com.skyframework.islandcoreclient.gui.party.PartyScreen;
 import com.skyframework.islandcoreclient.network.admin.dimension.DimensionCreateC2S;
 import com.skyframework.islandcoreclient.network.admin.dimension.DimensionDeleteC2S;
 import com.skyframework.islandcoreclient.network.admin.dimension.DimensionDeleteConfirmC2S;
@@ -32,6 +35,10 @@ import com.skyframework.islandcoreclient.network.admin.spawn.SpawnBuildProtectio
 import com.skyframework.islandcoreclient.network.admin.spawn.SpawnIslandCreateC2S;
 import com.skyframework.islandcoreclient.network.admin.spawn.SpawnIslandResizeC2S;
 import com.skyframework.islandcoreclient.network.admin.spawn.SpawnIslandSetHomeC2S;
+import com.skyframework.islandcoreclient.network.admin.defaults.AdminDefaultsStatusRequestC2S;
+import com.skyframework.islandcoreclient.network.admin.defaults.AdminDefaultsStatusS2C;
+import com.skyframework.islandcoreclient.network.admin.defaults.AdminExceptionSetServerDefaultC2S;
+import com.skyframework.islandcoreclient.network.admin.defaults.AdminFlagSetServerDefaultC2S;
 import com.skyframework.islandcoreclient.network.admin.spawn.SpawnStatusRequestC2S;
 import com.skyframework.islandcoreclient.network.admin.spawn.SpawnStatusS2C;
 import com.skyframework.islandcoreclient.network.admin.vanilla.VanillaResetCancelC2S;
@@ -41,6 +48,13 @@ import com.skyframework.islandcoreclient.network.admin.vanilla.VanillaResetListS
 import com.skyframework.islandcoreclient.network.admin.vanilla.VanillaResetQueueC2S;
 import com.skyframework.islandcoreclient.network.biome.BiomeTiersRequestC2S;
 import com.skyframework.islandcoreclient.network.biome.BiomeTiersS2C;
+import com.skyframework.islandcoreclient.network.flag.ExceptionGroupSetPresetC2S;
+import com.skyframework.islandcoreclient.network.flag.ExceptionGroupsStatusRequestC2S;
+import com.skyframework.islandcoreclient.network.flag.ExceptionGroupsStatusS2C;
+import com.skyframework.islandcoreclient.network.flag.FlagSetC2S;
+import com.skyframework.islandcoreclient.network.flag.FlagSetPresetC2S;
+import com.skyframework.islandcoreclient.network.flag.FlagsStatusRequestC2S;
+import com.skyframework.islandcoreclient.network.flag.FlagsStatusS2C;
 import com.skyframework.islandcoreclient.network.handshake.ClientHandshakeC2S;
 import com.skyframework.islandcoreclient.network.handshake.ServerHandshakeS2C;
 import com.skyframework.islandcoreclient.network.island.IslandBiomeChangeC2S;
@@ -51,15 +65,31 @@ import com.skyframework.islandcoreclient.network.island.IslandSettingsUpdateC2S;
 import com.skyframework.islandcoreclient.network.island.IslandSnapshotRequestC2S;
 import com.skyframework.islandcoreclient.network.island.IslandSnapshotS2C;
 import com.skyframework.islandcoreclient.network.island.IslandUpgradeC2S;
+import com.skyframework.islandcoreclient.network.member.MemberAllyAddC2S;
+import com.skyframework.islandcoreclient.network.member.MemberAllyRemoveC2S;
 import com.skyframework.islandcoreclient.network.member.MemberInviteAcceptC2S;
 import com.skyframework.islandcoreclient.network.member.MemberInviteC2S;
 import com.skyframework.islandcoreclient.network.member.MemberRemoveC2S;
 import com.skyframework.islandcoreclient.network.member.MemberTrustC2S;
+import com.skyframework.islandcoreclient.network.party.PartyAcceptC2S;
+import com.skyframework.islandcoreclient.network.party.PartyAllyAddC2S;
+import com.skyframework.islandcoreclient.network.party.PartyAllyRemoveC2S;
+import com.skyframework.islandcoreclient.network.party.PartyCreateC2S;
+import com.skyframework.islandcoreclient.network.party.PartyDisbandConfirmC2S;
+import com.skyframework.islandcoreclient.network.party.PartyDisbandRequestC2S;
+import com.skyframework.islandcoreclient.network.party.PartyInviteC2S;
+import com.skyframework.islandcoreclient.network.party.PartyKickC2S;
+import com.skyframework.islandcoreclient.network.party.PartyLeaveC2S;
+import com.skyframework.islandcoreclient.network.party.PartyRenameC2S;
+import com.skyframework.islandcoreclient.network.party.PartyStatusRequestC2S;
+import com.skyframework.islandcoreclient.network.party.PartyStatusS2C;
 import com.skyframework.islandcoreclient.network.teleport.TeleportRequestC2S;
 import com.skyframework.islandcoreclient.network.teleport.TeleportStatusRequestC2S;
 import com.skyframework.islandcoreclient.network.teleport.TeleportStatusS2C;
+import com.skyframework.islandcoreclient.state.ClientAdminDefaultsCache;
 import com.skyframework.islandcoreclient.state.ClientConnectionState;
 import com.skyframework.islandcoreclient.state.ClientIslandCache;
+import com.skyframework.islandcoreclient.state.ClientPartyCache;
 
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
@@ -113,6 +143,34 @@ public final class ClientPacketHandlers {
 			}
 		});
 
+		ClientPlayNetworking.registerGlobalReceiver(FlagsStatusS2C.ID, (payload, context) -> {
+			ClientIslandCache.applyFlagsStatus(payload);
+			if (MinecraftClient.getInstance().currentScreen instanceof SettingsScreen screen) {
+				screen.refreshFromNetwork();
+			}
+		});
+
+		ClientPlayNetworking.registerGlobalReceiver(ExceptionGroupsStatusS2C.ID, (payload, context) -> {
+			ClientIslandCache.applyExceptionGroupsStatus(payload);
+			if (MinecraftClient.getInstance().currentScreen instanceof SettingsScreen screen) {
+				screen.refreshFromNetwork();
+			}
+		});
+
+		ClientPlayNetworking.registerGlobalReceiver(PartyStatusS2C.ID, (payload, context) -> {
+			ClientPartyCache.applyStatus(payload);
+			if (MinecraftClient.getInstance().currentScreen instanceof PartyScreen screen) {
+				screen.refreshFromNetwork();
+			}
+		});
+
+		ClientPlayNetworking.registerGlobalReceiver(AdminDefaultsStatusS2C.ID, (payload, context) -> {
+			ClientAdminDefaultsCache.applyStatus(payload);
+			if (MinecraftClient.getInstance().currentScreen instanceof DefaultConfigScreen screen) {
+				screen.refreshFromNetwork();
+			}
+		});
+
 		ClientPlayNetworking.registerGlobalReceiver(ActionResultS2C.ID, (payload, context) ->
 				PendingActionTracker.onActionResult(payload));
 
@@ -156,6 +214,8 @@ public final class ClientPacketHandlers {
 		PayloadTypeRegistry.playC2S().register(MemberInviteAcceptC2S.ID, MemberInviteAcceptC2S.CODEC);
 		PayloadTypeRegistry.playC2S().register(MemberTrustC2S.ID, MemberTrustC2S.CODEC);
 		PayloadTypeRegistry.playC2S().register(MemberRemoveC2S.ID, MemberRemoveC2S.CODEC);
+		PayloadTypeRegistry.playC2S().register(MemberAllyAddC2S.ID, MemberAllyAddC2S.CODEC);
+		PayloadTypeRegistry.playC2S().register(MemberAllyRemoveC2S.ID, MemberAllyRemoveC2S.CODEC);
 
 		PayloadTypeRegistry.playC2S().register(TeleportRequestC2S.ID, TeleportRequestC2S.CODEC);
 		PayloadTypeRegistry.playC2S().register(TeleportStatusRequestC2S.ID, TeleportStatusRequestC2S.CODEC);
@@ -163,6 +223,32 @@ public final class ClientPacketHandlers {
 
 		PayloadTypeRegistry.playC2S().register(BiomeTiersRequestC2S.ID, BiomeTiersRequestC2S.CODEC);
 		PayloadTypeRegistry.playS2C().register(BiomeTiersS2C.ID, BiomeTiersS2C.CODEC);
+
+		PayloadTypeRegistry.playC2S().register(FlagsStatusRequestC2S.ID, FlagsStatusRequestC2S.CODEC);
+		PayloadTypeRegistry.playS2C().register(FlagsStatusS2C.ID, FlagsStatusS2C.CODEC);
+		PayloadTypeRegistry.playC2S().register(FlagSetC2S.ID, FlagSetC2S.CODEC);
+		PayloadTypeRegistry.playC2S().register(FlagSetPresetC2S.ID, FlagSetPresetC2S.CODEC);
+		PayloadTypeRegistry.playC2S().register(ExceptionGroupsStatusRequestC2S.ID, ExceptionGroupsStatusRequestC2S.CODEC);
+		PayloadTypeRegistry.playS2C().register(ExceptionGroupsStatusS2C.ID, ExceptionGroupsStatusS2C.CODEC);
+		PayloadTypeRegistry.playC2S().register(ExceptionGroupSetPresetC2S.ID, ExceptionGroupSetPresetC2S.CODEC);
+
+		PayloadTypeRegistry.playC2S().register(AdminDefaultsStatusRequestC2S.ID, AdminDefaultsStatusRequestC2S.CODEC);
+		PayloadTypeRegistry.playS2C().register(AdminDefaultsStatusS2C.ID, AdminDefaultsStatusS2C.CODEC);
+		PayloadTypeRegistry.playC2S().register(AdminFlagSetServerDefaultC2S.ID, AdminFlagSetServerDefaultC2S.CODEC);
+		PayloadTypeRegistry.playC2S().register(AdminExceptionSetServerDefaultC2S.ID, AdminExceptionSetServerDefaultC2S.CODEC);
+
+		PayloadTypeRegistry.playC2S().register(PartyStatusRequestC2S.ID, PartyStatusRequestC2S.CODEC);
+		PayloadTypeRegistry.playS2C().register(PartyStatusS2C.ID, PartyStatusS2C.CODEC);
+		PayloadTypeRegistry.playC2S().register(PartyCreateC2S.ID, PartyCreateC2S.CODEC);
+		PayloadTypeRegistry.playC2S().register(PartyInviteC2S.ID, PartyInviteC2S.CODEC);
+		PayloadTypeRegistry.playC2S().register(PartyAcceptC2S.ID, PartyAcceptC2S.CODEC);
+		PayloadTypeRegistry.playC2S().register(PartyLeaveC2S.ID, PartyLeaveC2S.CODEC);
+		PayloadTypeRegistry.playC2S().register(PartyKickC2S.ID, PartyKickC2S.CODEC);
+		PayloadTypeRegistry.playC2S().register(PartyRenameC2S.ID, PartyRenameC2S.CODEC);
+		PayloadTypeRegistry.playC2S().register(PartyDisbandRequestC2S.ID, PartyDisbandRequestC2S.CODEC);
+		PayloadTypeRegistry.playC2S().register(PartyDisbandConfirmC2S.ID, PartyDisbandConfirmC2S.CODEC);
+		PayloadTypeRegistry.playC2S().register(PartyAllyAddC2S.ID, PartyAllyAddC2S.CODEC);
+		PayloadTypeRegistry.playC2S().register(PartyAllyRemoveC2S.ID, PartyAllyRemoveC2S.CODEC);
 
 		PayloadTypeRegistry.playC2S().register(AdminIslandListRequestC2S.ID, AdminIslandListRequestC2S.CODEC);
 		PayloadTypeRegistry.playS2C().register(AdminIslandListS2C.ID, AdminIslandListS2C.CODEC);

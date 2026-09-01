@@ -7,7 +7,9 @@ import net.minecraft.network.packet.CustomPayload;
 import net.minecraft.util.Identifier;
 
 public record ClientHandshakeC2S(int protocolVersion) implements CustomPayload {
-	public static final int CURRENT_PROTOCOL_VERSION = 1;
+	// Bumped to 3 alongside FlagRegistry's "build"/"break" merge into "construccion" (one fewer
+	// flag, different id) — must match the server's NetworkChannels.PROTOCOL_VERSION.
+	public static final int CURRENT_PROTOCOL_VERSION = 3;
 
 	// Namespaced under "islandcore", not "islandcoreclient": the server mod owns this protocol.
 	public static final CustomPayload.Id<ClientHandshakeC2S> ID =

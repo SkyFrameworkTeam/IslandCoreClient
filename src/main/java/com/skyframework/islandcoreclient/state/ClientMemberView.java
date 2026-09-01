@@ -9,7 +9,8 @@ public final class ClientMemberView {
 	public enum Role {
 		OWNER(Formatting.GOLD),
 		TRUSTED(Formatting.AQUA),
-		MEMBER(Formatting.GREEN);
+		MEMBER(Formatting.GREEN),
+		ALLY(Formatting.YELLOW);
 
 		private final Formatting color;
 

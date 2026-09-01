@@ -8,6 +8,8 @@ import com.skyframework.islandcoreclient.network.admin.spawn.SpawnBuildProtectio
 import com.skyframework.islandcoreclient.network.admin.spawn.SpawnStatusS2C;
 import com.skyframework.islandcoreclient.network.admin.vanilla.VanillaResetListS2C;
 import com.skyframework.islandcoreclient.network.biome.BiomeTiersS2C;
+import com.skyframework.islandcoreclient.network.flag.ExceptionGroupsStatusS2C;
+import com.skyframework.islandcoreclient.network.flag.FlagsStatusS2C;
 import com.skyframework.islandcoreclient.network.island.IslandSnapshotS2C;
 import com.skyframework.islandcoreclient.network.teleport.TeleportStatusS2C;
 
@@ -25,23 +27,6 @@ import net.minecraft.util.math.BlockPos;
 import org.jetbrains.annotations.Nullable;
 
 public final class ClientIslandCache {
-	// The 3 settings IslandCore currently supports; IslandSnapshotS2C.SettingEntry#key carries the
-	// server's IslandSetting enum CONSTANT NAME (e.g. "FIRE_SPREAD"), while IslandSettingsUpdateC2S
-	// expects IslandSetting#getId() ("firespread") — this maps between the two, same ids
-	// IslandCommand's settings argument and this list's own keys already used before real network
-	// existed.
-	private static final Map<String, String> SETTING_ENUM_NAME_TO_ID = Map.of(
-			"FIRE_SPREAD", "firespread",
-			"PVP_DAMAGE", "pvp",
-			"MOB_DAMAGE", "mobdamage"
-	);
-
-	private static final List<ClientIslandSettingView> SETTINGS = List.of(
-			new ClientIslandSettingView("firespread", Text.translatable("islandcoreclient.settings.firespread"), false),
-			new ClientIslandSettingView("pvp", Text.translatable("islandcoreclient.settings.pvp"), false),
-			new ClientIslandSettingView("mobdamage", Text.translatable("islandcoreclient.settings.mobdamage"), false)
-	);
-
 	// The snapshot protocol only ever describes the requesting player's OWN island (the server
 	// resolves it via getIslandByOwner(player)) — there is no network query yet for an island the
 	// player is merely a TRUSTED/MEMBER of, so "owner" is always true whenever exists == true.
@@ -64,6 +49,12 @@ public final class ClientIslandCache {
 	// which lists invites the player's OWN island sent out).
 	@Nullable
 	private static volatile ClientIncomingInviteView incomingInvite = null;
+
+	// Real, populated from FlagsStatusS2C/ExceptionGroupsStatusS2C — see SettingsScreen, which
+	// replaced the old 3-toggle legacy IslandSetting view entirely (the server already treats
+	// firespread/pvp/mobdamage as aliases of 3 of these 9 flags, so nothing is lost).
+	private static volatile List<ClientFlagView> flags = List.of();
+	private static volatile List<ClientExceptionGroupView> exceptionGroups = List.of();
 
 	private static volatile List<ClientBiomeTierView> biomeTiers = List.of();
 
@@ -160,11 +151,77 @@ public final class ClientIslandCache {
 		for (IslandSnapshotS2C.PendingInviteEntry entry : snapshot.pendingInvites()) {
 			PENDING_INVITES.add(new ClientPendingInviteView(entry.targetName(), entry.expiresInSeconds()));
 		}
+		// snapshot.settings() (the legacy IslandSetting list) is no longer consumed client-side —
+		// SettingsScreen reads flags/exceptionGroups below instead.
+	}
 
-		for (IslandSnapshotS2C.SettingEntry entry : snapshot.settings()) {
-			String id = SETTING_ENUM_NAME_TO_ID.get(entry.key());
-			if (id != null) {
-				updateSetting(id, entry.value());
+	public static void applyFlagsStatus(FlagsStatusS2C status) {
+		List<ClientFlagView> mapped = new ArrayList<>();
+		for (FlagsStatusS2C.FlagEntry entry : status.flags()) {
+			ClientFlagView.Category category = ClientFlagView.Category.valueOf(entry.category());
+			List<ClientFlagView.RoleValue> resolvedByRole = new ArrayList<>();
+			for (FlagsStatusS2C.RoleValueEntry roleEntry : entry.resolvedByRole()) {
+				resolvedByRole.add(new ClientFlagView.RoleValue(roleEntry.role(), "ALLOW".equals(roleEntry.value())));
+			}
+			mapped.add(new ClientFlagView(entry.flagId(), category, entry.resolvedValue(), resolvedByRole,
+					ClientTriState.fromWire(entry.islandOverride()), entry.currentPreset()));
+		}
+		flags = List.copyOf(mapped);
+	}
+
+	public static List<ClientFlagView> getFlags() {
+		return flags;
+	}
+
+	// Optimistic update for TriStateRow's immediate cycle, reverted by SettingsScreen on failure —
+	// same pattern SettingsScreen#onSettingToggled (now removed) used to use for IslandSettingsUpdateC2S.
+	public static void updateFlagOverride(String flagId, ClientTriState newOverride) {
+		for (ClientFlagView flag : flags) {
+			if (flag.flagId().equals(flagId)) {
+				flag.setIslandOverride(newOverride);
+				return;
+			}
+		}
+	}
+
+	// Optimistic update for FlagPresetRow's immediate highlight. Only currentPreset is predicted
+	// here — unlike updateFlagOverride above, resolvedByRole/islandOverride are NOT guessed, since
+	// a preset's exact resolved values depend on server/code defaults this client doesn't
+	// replicate; SettingsScreen always refetches FlagsStatusRequestC2S after a successful preset
+	// change instead (see its onFlagPresetChanged).
+	public static void updateFlagPreset(String flagId, String preset) {
+		for (ClientFlagView flag : flags) {
+			if (flag.flagId().equals(flagId)) {
+				flag.setCurrentPreset(preset);
+				return;
+			}
+		}
+	}
+
+	public static void applyExceptionGroupsStatus(ExceptionGroupsStatusS2C status) {
+		List<ClientExceptionGroupView> mapped = new ArrayList<>();
+		for (ExceptionGroupsStatusS2C.GroupEntry entry : status.groups()) {
+			List<ClientFlagView.RoleValue> resolvedByRole = new ArrayList<>();
+			for (FlagsStatusS2C.RoleValueEntry roleEntry : entry.resolvedByRole()) {
+				resolvedByRole.add(new ClientFlagView.RoleValue(roleEntry.role(), "ALLOW".equals(roleEntry.value())));
+			}
+			mapped.add(new ClientExceptionGroupView(entry.groupId(), entry.category(), resolvedByRole,
+					entry.currentPreset(), entry.ownerConfigurable()));
+		}
+		exceptionGroups = List.copyOf(mapped);
+	}
+
+	public static List<ClientExceptionGroupView> getExceptionGroups() {
+		return exceptionGroups;
+	}
+
+	// Optimistic update for FlagPresetRow's immediate highlight — exact mirror of updateFlagPreset
+	// above, same "don't guess resolvedByRole, always refetch on success" reasoning.
+	public static void updateExceptionGroupPreset(String groupId, String preset) {
+		for (ClientExceptionGroupView group : exceptionGroups) {
+			if (group.groupId().equals(groupId)) {
+				group.setCurrentPreset(preset);
+				return;
 			}
 		}
 	}
@@ -234,25 +291,12 @@ public final class ClientIslandCache {
 			"warped_forest", "crimson_forest", "soul_sand_valley"
 	);
 
-	public static List<ClientIslandSettingView> getSettings() {
-		return SETTINGS;
-	}
-
 	public static boolean isOwner() {
 		return owner;
 	}
 
 	public static boolean hasIsland() {
 		return hasIsland;
-	}
-
-	public static void updateSetting(String key, boolean value) {
-		for (ClientIslandSettingView setting : SETTINGS) {
-			if (setting.key().equals(key)) {
-				setting.setValue(value);
-				return;
-			}
-		}
 	}
 
 	public static int getSize() {

@@ -1,6 +1,7 @@
 package com.skyframework.islandcoreclient.gui.island;
 
 import com.skyframework.islandcoreclient.gui.admin.AdminIslandListScreen;
+import com.skyframework.islandcoreclient.gui.admin.DefaultConfigScreen;
 import com.skyframework.islandcoreclient.gui.admin.DimensionManagerScreen;
 import com.skyframework.islandcoreclient.gui.admin.SpawnManagerScreen;
 import com.skyframework.islandcoreclient.gui.admin.VanillaResetScreen;
@@ -46,6 +47,12 @@ public class DashboardScreen extends BaseMenuScreen {
 	private static final int ADMIN_GATEWAY_BUTTON_WIDTH = 220;
 	private static final int ADMIN_GATEWAY_BUTTON_HEIGHT = 20;
 	private static final int ADMIN_GATEWAY_GAP = 8;
+	// Minimum gap kept below the "Panel de administración" heading (drawn at TOP_BAR_HEIGHT + 20,
+	// see renderAdminGatewayContent) — the button list below is normally vertically centered in the
+	// whole screen, which reads fine on a tall window but let the first button creep up under the
+	// heading on a short one (a small window, or a high GUI Scale shrinking the effective GUI-space
+	// height). This is enforced as a floor on top of the centering, not a replacement for it.
+	private static final int ADMIN_HEADING_GAP = 16;
 
 	private boolean showingAdmin = false;
 
@@ -161,9 +168,10 @@ public class DashboardScreen extends BaseMenuScreen {
 	}
 
 	private void initAdminGatewayContent() {
-		int totalHeight = ADMIN_GATEWAY_BUTTON_HEIGHT * 4 + ADMIN_GATEWAY_GAP * 3;
+		int totalHeight = ADMIN_GATEWAY_BUTTON_HEIGHT * 5 + ADMIN_GATEWAY_GAP * 4;
 		int x = this.width / 2 - ADMIN_GATEWAY_BUTTON_WIDTH / 2;
-		int y = this.height / 2 - totalHeight / 2;
+		int minY = TOP_BAR_HEIGHT + 20 + this.textRenderer.fontHeight + ADMIN_HEADING_GAP;
+		int y = Math.max(this.height / 2 - totalHeight / 2, minY);
 
 		this.addDrawableChild(ButtonWidget.builder(
 						Text.translatable("islandcoreclient.admin.dashboard.island_list_button"),
@@ -186,6 +194,12 @@ public class DashboardScreen extends BaseMenuScreen {
 		this.addDrawableChild(ButtonWidget.builder(
 						Text.translatable("islandcoreclient.admin.dashboard.vanilla_reset_button"),
 						button -> this.client.setScreen(new VanillaResetScreen(this)))
+				.dimensions(x, y, ADMIN_GATEWAY_BUTTON_WIDTH, ADMIN_GATEWAY_BUTTON_HEIGHT)
+				.build());
+		y += ADMIN_GATEWAY_BUTTON_HEIGHT + ADMIN_GATEWAY_GAP;
+		this.addDrawableChild(ButtonWidget.builder(
+						Text.translatable("islandcoreclient.admin.dashboard.default_config_button"),
+						button -> this.client.setScreen(new DefaultConfigScreen(this)))
 				.dimensions(x, y, ADMIN_GATEWAY_BUTTON_WIDTH, ADMIN_GATEWAY_BUTTON_HEIGHT)
 				.build());
 	}
