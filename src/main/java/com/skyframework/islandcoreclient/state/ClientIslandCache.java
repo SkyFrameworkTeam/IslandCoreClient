@@ -29,7 +29,7 @@ import org.jetbrains.annotations.Nullable;
 public final class ClientIslandCache {
 	// The snapshot protocol only ever describes the requesting player's OWN island (the server
 	// resolves it via getIslandByOwner(player)) — there is no network query yet for an island the
-	// player is merely a TRUSTED/MEMBER of, so "owner" is always true whenever exists == true.
+	// player is merely a CO_OWNER/MEMBER of, so "owner" is always true whenever exists == true.
 	private static volatile boolean owner = false;
 	private static volatile boolean hasIsland = false;
 
@@ -164,7 +164,7 @@ public final class ClientIslandCache {
 				resolvedByRole.add(new ClientFlagView.RoleValue(roleEntry.role(), "ALLOW".equals(roleEntry.value())));
 			}
 			mapped.add(new ClientFlagView(entry.flagId(), category, entry.resolvedValue(), resolvedByRole,
-					ClientTriState.fromWire(entry.islandOverride()), entry.currentPreset()));
+					ClientTriState.fromWire(entry.islandOverride()), entry.currentPreset(), entry.missingRequiredPermission()));
 		}
 		flags = List.copyOf(mapped);
 	}
@@ -327,10 +327,12 @@ public final class ClientIslandCache {
 		return MEMBERS;
 	}
 
-	public static void promoteToTrusted(UUID uuid) {
+	// Used after a confirmed MemberTrustC2S (MEMBER<->CO_OWNER toggle — see MembersScreen#onTrustClicked)
+	// to reflect the new role without waiting on a full snapshot refetch.
+	public static void setMemberRole(UUID uuid, ClientMemberView.Role role) {
 		for (ClientMemberView member : MEMBERS) {
 			if (member.uuid().equals(uuid)) {
-				member.setRole(ClientMemberView.Role.TRUSTED);
+				member.setRole(role);
 				return;
 			}
 		}

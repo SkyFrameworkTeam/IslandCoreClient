@@ -11,8 +11,8 @@ import java.util.List;
 
 // Mirrors the server's net.flag.FlagsStatusS2C exactly. Only sent when the requesting player has
 // an island — if not, the server sends ActionResultS2C.fail("no_island") instead. flags is in
-// FlagRegistry.all()'s registration order (build, break, interact, containers, entities, redstone,
-// fire_spread, pvp_damage, mob_damage).
+// FlagRegistry.all()'s registration order (construccion, interact, entities, redstone, fire_spread,
+// pvp_damage, mob_damage, crop_trample, natural_mob_spawning, raids).
 public record FlagsStatusS2C(List<FlagEntry> flags) implements CustomPayload {
 
 	public static final CustomPayload.Id<FlagsStatusS2C> ID = new CustomPayload.Id<>(Identifier.of("islandcore", "flags_status_s2c"));
@@ -36,22 +36,39 @@ public record FlagsStatusS2C(List<FlagEntry> flags) implements CustomPayload {
 	// override ("ALLOW"/"DENY"/"DEFAULT") — a single value even for ROLE_BASED, since "/island flags
 	// set" (unlike the preset) always overrides every role uniformly. currentPreset: ROLE_BASED only
 	// (added after islandOverride) — "nadie"/"miembros"/"aliados"/"todos" if the current
-	// VISITOR/ALLY/MEMBER/TRUSTED combination exactly matches one of those presets, or "custom" if
-	// not; always "" for an ISLAND_GLOBAL entry.
+	// VISITOR/ALLY/MEMBER combination exactly matches one of those presets, or "custom" if
+	// not; always "" for an ISLAND_GLOBAL entry. missingRequiredPermission: true only if the server's
+	// FlagPermissionRequirements has a node set for this flag and the requesting player (the island
+	// owner) lacks it — presentation only, SettingsScreen dims the row and explains why; the real
+	// gate is server-side.
 	public record FlagEntry(
-			String flagId, String category, boolean resolvedValue, List<RoleValueEntry> resolvedByRole, String islandOverride, String currentPreset
+			String flagId, String category, boolean resolvedValue, List<RoleValueEntry> resolvedByRole, String islandOverride, String currentPreset,
+			boolean missingRequiredPermission
 	) {
 		private static final PacketCodec<RegistryByteBuf, List<RoleValueEntry>> ROLE_VALUE_LIST_CODEC =
 				PacketCodecs.collection(ArrayList::new, RoleValueEntry.CODEC);
 
-		public static final PacketCodec<RegistryByteBuf, FlagEntry> CODEC = PacketCodec.tuple(
-				PacketCodecs.STRING, FlagEntry::flagId,
-				PacketCodecs.STRING, FlagEntry::category,
-				PacketCodecs.BOOL, FlagEntry::resolvedValue,
-				ROLE_VALUE_LIST_CODEC, FlagEntry::resolvedByRole,
-				PacketCodecs.STRING, FlagEntry::islandOverride,
-				PacketCodecs.STRING, FlagEntry::currentPreset,
-				FlagEntry::new
+		// 7 fields is past PacketCodec#tuple's 6-argument limit, so this is hand-written with
+		// PacketCodec#of instead — mirrors the server's net.flag.FlagsStatusS2C.FlagEntry#CODEC.
+		public static final PacketCodec<RegistryByteBuf, FlagEntry> CODEC = PacketCodec.of(
+				(value, buf) -> {
+					PacketCodecs.STRING.encode(buf, value.flagId());
+					PacketCodecs.STRING.encode(buf, value.category());
+					PacketCodecs.BOOL.encode(buf, value.resolvedValue());
+					ROLE_VALUE_LIST_CODEC.encode(buf, value.resolvedByRole());
+					PacketCodecs.STRING.encode(buf, value.islandOverride());
+					PacketCodecs.STRING.encode(buf, value.currentPreset());
+					PacketCodecs.BOOL.encode(buf, value.missingRequiredPermission());
+				},
+				buf -> new FlagEntry(
+						PacketCodecs.STRING.decode(buf),
+						PacketCodecs.STRING.decode(buf),
+						PacketCodecs.BOOL.decode(buf),
+						ROLE_VALUE_LIST_CODEC.decode(buf),
+						PacketCodecs.STRING.decode(buf),
+						PacketCodecs.STRING.decode(buf),
+						PacketCodecs.BOOL.decode(buf)
+				)
 		);
 	}
 

@@ -173,9 +173,15 @@ public class SettingsScreen extends BaseMenuScreen {
 		int x = this.width / 2 - ROW_WIDTH / 2;
 		int y = CONTENT_TOP;
 		for (ClientFlagView flag : globalFlags()) {
-			TriStateRow row = new TriStateRow(x, y, ROW_WIDTH, ROW_HEIGHT, flag.label(), flag.islandOverride(), owner,
+			boolean editable = owner && !flag.missingRequiredPermission();
+			TriStateRow row = new TriStateRow(x, y, ROW_WIDTH, ROW_HEIGHT, flag.label(), flag.islandOverride(), editable,
 					newValue -> onFlagOverrideChanged(flag.flagId(), newValue));
-			row.setTooltip(Tooltip.of(flag.description()));
+			// Still shows the current value even when disabled — only whether the player can change
+			// it is affected, same as any other owner-gated row.
+			Text tooltip = flag.missingRequiredPermission()
+					? flag.description().copy().append("\n").append(Text.translatable("islandcoreclient.settings.flag_permission_required"))
+					: flag.description();
+			row.setTooltip(Tooltip.of(tooltip));
 			this.addDrawableChild(row);
 			y += ROW_HEIGHT + ROW_SPACING;
 		}

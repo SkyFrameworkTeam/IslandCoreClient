@@ -12,7 +12,7 @@ import net.minecraft.text.Text;
  * shape as {@link TriStateRow}/{@link ToggleRow}), reporting the chosen preset id ("nadie"/
  * "miembros"/"aliados"/"todos") via {@link OnSelect}.
  *
- * <p>A preset of {@code "custom"} (the resolved VISITOR/ALLY/MEMBER/TRUSTED combination doesn't
+ * <p>A preset of {@code "custom"} (the resolved VISITOR/ALLY/MEMBER combination doesn't
  * match any of the 4 presets — e.g. set up via {@code /island flags set} on individual roles
  * before this UI existed) is shown as "Personalizado"; clicking from custom starts the cycle over
  * at "nadie" instead of trying to guess a "next" preset that doesn't apply to it.

@@ -54,6 +54,12 @@ public class VanillaResetScreen extends BaseMenuScreen {
 	private static final int SUB_BACK_Y = TOP_BAR_HEIGHT + 6;
 	private static final int OPTIONS_WARNING_Y = SUB_BACK_Y + 22;
 	private static final int OPTIONS_FORM_Y = OPTIONS_WARNING_Y + LINE_HEIGHT * 3 + 8;
+	private static final int PENDING_WARNING_Y = SUB_BACK_Y + 22;
+	private static final int PENDING_COUNTDOWN_Y = PENDING_WARNING_Y + LINE_HEIGHT + 4;
+	// The countdown text above ends around PENDING_COUNTDOWN_Y + textRenderer.fontHeight (~9px); a
+	// flat "+ 44" here previously left only ~2px of clearance, letting the button's top edge touch
+	// the "Confirmando..." countdown text. A small explicit margin below the text fixes that.
+	private static final int PENDING_CONFIRM_BUTTON_Y = PENDING_COUNTDOWN_Y + LINE_HEIGHT + 8;
 
 	private Mode mode = Mode.LIST;
 	@Nullable
@@ -157,7 +163,7 @@ public class VanillaResetScreen extends BaseMenuScreen {
 		this.addDrawableChild(ButtonWidget.builder(
 						Text.translatable("islandcoreclient.admin.vanilla_reset.confirm_button"),
 						button -> onConfirmQueueClicked())
-				.dimensions(CONTENT_X, SUB_BACK_Y + 44, 200, 20)
+				.dimensions(CONTENT_X, PENDING_CONFIRM_BUTTON_Y, 200, 20)
 				.build());
 	}
 
@@ -228,10 +234,10 @@ public class VanillaResetScreen extends BaseMenuScreen {
 		long remaining = Math.max(0L, (this.pendingExpiresAtMillis - System.currentTimeMillis()) / 1000L);
 		context.drawTextWithShadow(this.textRenderer,
 				Text.translatable("islandcoreclient.admin.vanilla_reset.evacuate_warning").formatted(Formatting.RED),
-				CONTENT_X, SUB_BACK_Y + 22, 0xFFFFFF);
+				CONTENT_X, PENDING_WARNING_Y, 0xFFFFFF);
 		context.drawTextWithShadow(this.textRenderer,
 				Text.translatable("islandcoreclient.admin.vanilla_reset.countdown", remaining),
-				CONTENT_X, SUB_BACK_Y + 22 + LINE_HEIGHT + 4, 0xFFCC55);
+				CONTENT_X, PENDING_COUNTDOWN_Y, 0xFFCC55);
 	}
 
 	private static int rowHeight(ClientVanillaResetState state) {

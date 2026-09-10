@@ -38,6 +38,7 @@ import com.skyframework.islandcoreclient.network.admin.spawn.SpawnIslandSetHomeC
 import com.skyframework.islandcoreclient.network.admin.defaults.AdminDefaultsStatusRequestC2S;
 import com.skyframework.islandcoreclient.network.admin.defaults.AdminDefaultsStatusS2C;
 import com.skyframework.islandcoreclient.network.admin.defaults.AdminExceptionSetServerDefaultC2S;
+import com.skyframework.islandcoreclient.network.admin.defaults.AdminFlagSetRequirementC2S;
 import com.skyframework.islandcoreclient.network.admin.defaults.AdminFlagSetServerDefaultC2S;
 import com.skyframework.islandcoreclient.network.admin.spawn.SpawnStatusRequestC2S;
 import com.skyframework.islandcoreclient.network.admin.spawn.SpawnStatusS2C;
@@ -236,6 +237,7 @@ public final class ClientPacketHandlers {
 		PayloadTypeRegistry.playS2C().register(AdminDefaultsStatusS2C.ID, AdminDefaultsStatusS2C.CODEC);
 		PayloadTypeRegistry.playC2S().register(AdminFlagSetServerDefaultC2S.ID, AdminFlagSetServerDefaultC2S.CODEC);
 		PayloadTypeRegistry.playC2S().register(AdminExceptionSetServerDefaultC2S.ID, AdminExceptionSetServerDefaultC2S.CODEC);
+		PayloadTypeRegistry.playC2S().register(AdminFlagSetRequirementC2S.ID, AdminFlagSetRequirementC2S.CODEC);
 
 		PayloadTypeRegistry.playC2S().register(PartyStatusRequestC2S.ID, PartyStatusRequestC2S.CODEC);
 		PayloadTypeRegistry.playS2C().register(PartyStatusS2C.ID, PartyStatusS2C.CODEC);

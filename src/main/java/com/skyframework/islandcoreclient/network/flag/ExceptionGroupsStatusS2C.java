@@ -33,8 +33,8 @@ public record ExceptionGroupsStatusS2C(List<GroupEntry> groups) implements Custo
 
 	// category: "BLOCK" or "ENTITY". resolvedByRole: one entry per IslandRole, reusing
 	// FlagsStatusS2C.RoleValueEntry exactly (same shape, no reason to duplicate it). currentPreset:
-	// "nadie"/"miembros"/"aliados"/"todos" if the current VISITOR/ALLY/MEMBER/TRUSTED combination
-	// exactly matches one of those presets, or "custom" if not.
+	// "nadie"/"miembros"/"aliados"/"todos" if the current VISITOR/ALLY/MEMBER combination exactly
+	// matches one of those presets, or "custom" if not.
 	public record GroupEntry(
 			String groupId, String category, List<FlagsStatusS2C.RoleValueEntry> resolvedByRole, String currentPreset, boolean ownerConfigurable
 	) {

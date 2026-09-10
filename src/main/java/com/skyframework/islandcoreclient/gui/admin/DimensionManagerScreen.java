@@ -141,7 +141,11 @@ public class DimensionManagerScreen extends BaseMenuScreen {
 		}
 
 		boolean pending = this.pendingAction != null;
-		int buttonY = SUB_BACK_Y + 20 + LINE_HEIGHT * 4 + 16;
+		// +LINE_HEIGHT * 2 beyond the base 4-line block: when createdAt/updatedAt are populated (the
+		// common case — see the null-check below), renderDetailContent draws 2 more detail lines
+		// before this Y, which the previous flat offset didn't account for, letting these buttons'
+		// top edge overlap that text.
+		int buttonY = SUB_BACK_Y + 20 + LINE_HEIGHT * 4 + 16 + LINE_HEIGHT * 2;
 
 		ButtonWidget regenerateButton = this.addDrawableChild(ButtonWidget.builder(
 						Text.translatable("islandcoreclient.admin.dimension_manager.regenerate_button"),

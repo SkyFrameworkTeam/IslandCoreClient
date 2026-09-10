@@ -61,8 +61,26 @@ public final class ClientExceptionGroupView {
 		return switch (groupId) {
 			case "doors" -> Text.translatable("islandcoreclient.exceptions.group.doors");
 			case "chests" -> Text.translatable("islandcoreclient.exceptions.group.chests");
-			case "redstone" -> Text.translatable("islandcoreclient.exceptions.group.redstone");
 			case "animals" -> Text.translatable("islandcoreclient.exceptions.group.animals");
+			case "crops" -> Text.translatable("islandcoreclient.exceptions.group.crops");
+			case "furnaces" -> Text.translatable("islandcoreclient.exceptions.group.furnaces");
+			// "redstone"/"mechanisms" removed — retired server-side, both were duplicates covering
+			// the same buttons/levers, now split into their own independent groups below.
+			case "buttons" -> Text.translatable("islandcoreclient.exceptions.group.buttons");
+			case "levers" -> Text.translatable("islandcoreclient.exceptions.group.levers");
+			case "bells" -> Text.translatable("islandcoreclient.exceptions.group.bells");
+			case "lecterns" -> Text.translatable("islandcoreclient.exceptions.group.lecterns");
+			case "beds" -> Text.translatable("islandcoreclient.exceptions.group.beds");
+			case "barrels" -> Text.translatable("islandcoreclient.exceptions.group.barrels");
+			case "shulker_boxes" -> Text.translatable("islandcoreclient.exceptions.group.shulker_boxes");
+			case "hoppers" -> Text.translatable("islandcoreclient.exceptions.group.hoppers");
+			case "dispensers_droppers" -> Text.translatable("islandcoreclient.exceptions.group.dispensers_droppers");
+			case "crafting_tables" -> Text.translatable("islandcoreclient.exceptions.group.crafting_tables");
+			case "anvils" -> Text.translatable("islandcoreclient.exceptions.group.anvils");
+			case "enchanting_tables" -> Text.translatable("islandcoreclient.exceptions.group.enchanting_tables");
+			case "jukeboxes" -> Text.translatable("islandcoreclient.exceptions.group.jukeboxes");
+			case "note_blocks" -> Text.translatable("islandcoreclient.exceptions.group.note_blocks");
+			case "cakes" -> Text.translatable("islandcoreclient.exceptions.group.cakes");
 			default -> Text.literal(groupId);
 		};
 	}

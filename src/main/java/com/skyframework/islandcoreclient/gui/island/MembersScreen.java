@@ -27,6 +27,7 @@ import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.client.gui.widget.ClickableWidget;
 import net.minecraft.client.gui.widget.TextFieldWidget;
 import net.minecraft.text.Text;
+import net.minecraft.util.Formatting;
 
 /**
  * The member list and the pending-invite list each scroll independently inside their own fixed
@@ -83,12 +84,16 @@ public class MembersScreen extends BaseMenuScreen {
 			ClientMemberView member = members.get(i);
 			int buttonY = memberList.getRowY(i) + (ROW_HEIGHT - ACTION_BUTTON_HEIGHT) / 2;
 			boolean rowVisible = memberList.isRowVisible(i);
-			if (member.role() == ClientMemberView.Role.MEMBER) {
-				addRowButton(Text.translatable("islandcoreclient.members.trust"), actionsX - ACTION_BUTTON_WIDTH - 4, buttonY, rowVisible, i,
-						() -> onTrustClicked(member.uuid()));
-				addRowButton(Text.translatable("islandcoreclient.members.remove"), actionsX, buttonY, rowVisible, i,
-						() -> onRemoveClicked(member.uuid()));
-			} else if (member.role() == ClientMemberView.Role.TRUSTED) {
+			if (member.role() == ClientMemberView.Role.MEMBER || member.role() == ClientMemberView.Role.CO_OWNER) {
+				// Both roles get the same two buttons: "Trust" toggles MEMBER<->CO_OWNER (server-side
+				// MemberTrustC2S now always toggles by current role — see
+				// MembershipService#toggleCoOwner) and "Quitar" always fully expels regardless of
+				// role (MemberRemoveC2S — see MembershipService#removeMember). trustButtonLabel
+				// highlights the button when the row is currently CO_OWNER, so its state is visible
+				// without reading the role text next to the name.
+				addRowButton(trustButtonLabel(member.role() == ClientMemberView.Role.CO_OWNER),
+						actionsX - ACTION_BUTTON_WIDTH - 4, buttonY, rowVisible, i,
+						() -> onTrustClicked(member.uuid(), member.role()));
 				addRowButton(Text.translatable("islandcoreclient.members.remove"), actionsX, buttonY, rowVisible, i,
 						() -> onRemoveClicked(member.uuid()));
 			} else if (member.role() == ClientMemberView.Role.ALLY) {
@@ -137,6 +142,14 @@ public class MembersScreen extends BaseMenuScreen {
 
 		memberList.setViewport(NAME_X, FIRST_ROW_Y, viewportWidth, memberViewportHeight);
 		pendingList.setViewport(NAME_X, pendingViewportY, viewportWidth, pendingViewportHeight);
+	}
+
+	// Bold + aqua (same color MEMBERS.role().label() uses for CO_OWNER) when the row is currently
+	// CO_OWNER, plain otherwise — a highlighted "Trust" button reads as "already trusted", same
+	// visual language ToggleRow-style active states already use elsewhere.
+	private static Text trustButtonLabel(boolean isCoOwner) {
+		Text base = Text.translatable("islandcoreclient.members.trust");
+		return isCoOwner ? base.copy().formatted(Formatting.AQUA, Formatting.BOLD) : base;
 	}
 
 	private void addRowButton(Text text, int x, int y, boolean rowVisible, int rowIndex, Runnable onClick) {
@@ -208,11 +221,16 @@ public class MembersScreen extends BaseMenuScreen {
 		pendingList.renderScrollbar(context);
 	}
 
-	private void onTrustClicked(UUID uuid) {
+	// MemberTrustC2S toggles by the target's CURRENT role server-side (see
+	// MembershipService#toggleCoOwner), so currentRole (captured at click time) is what decides the
+	// optimistic new role here too.
+	private void onTrustClicked(UUID uuid, ClientMemberView.Role currentRole) {
+		ClientMemberView.Role newRole = currentRole == ClientMemberView.Role.CO_OWNER
+				? ClientMemberView.Role.MEMBER : ClientMemberView.Role.CO_OWNER;
 		ClientPlayNetworking.send(new MemberTrustC2S(uuid));
 		PendingActionTracker.await((success, reasonKey) -> {
 			if (success) {
-				ClientIslandCache.promoteToTrusted(uuid);
+				ClientIslandCache.setMemberRole(uuid, newRole);
 			} else {
 				ClientErrorToasts.showReason(reasonKey);
 			}

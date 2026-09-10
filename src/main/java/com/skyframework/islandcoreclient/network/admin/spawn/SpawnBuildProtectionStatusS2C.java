@@ -13,7 +13,7 @@ import java.util.UUID;
 
 // Mirrors the server's net.admin.spawn.SpawnBuildProtectionStatusS2C exactly: enabled (the Spawn
 // island's current BUILD_PROTECTION value, false if Spawn doesn't exist), authorizedPlayers (list
-// of AuthorizedPlayerEntry: the Spawn island's MEMBER/TRUSTED members, empty if Spawn doesn't
+// of AuthorizedPlayerEntry: the Spawn island's MEMBER/CO_OWNER members, empty if Spawn doesn't
 // exist).
 public record SpawnBuildProtectionStatusS2C(boolean enabled, List<AuthorizedPlayerEntry> authorizedPlayers) implements CustomPayload {
 
