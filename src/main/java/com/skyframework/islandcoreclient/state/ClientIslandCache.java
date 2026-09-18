@@ -77,6 +77,9 @@ public final class ClientIslandCache {
 		}
 	}
 
+	// Real, populated from TeleportStatusS2C#dimensions — see applyTeleportStatus below.
+	private static volatile List<ClientDimensionTeleportView> dimensionTeleports = List.of();
+
 	// Admin network block: all real, populated from AdminIslandListS2C/AdminIslandDetailS2C/
 	// SpawnStatusS2C/DimensionListS2C/DimensionDetailS2C/VanillaResetListS2C. Empty/default until
 	// the first real reply lands — see ClientPacketHandlers' refreshFromNetwork() wiring for each.
@@ -230,7 +233,13 @@ public final class ClientIslandCache {
 		applyTeleportStatusEntry(ClientTeleportType.HOME, status.home());
 		applyTeleportStatusEntry(ClientTeleportType.SPAWN, status.spawn());
 		applyTeleportStatusEntry(ClientTeleportType.RTP, status.rtp());
-		applyTeleportStatusEntry(ClientTeleportType.FARMING, status.farming());
+
+		List<ClientDimensionTeleportView> mapped = new ArrayList<>();
+		for (TeleportStatusS2C.DimensionTeleportEntry entry : status.dimensions()) {
+			mapped.add(new ClientDimensionTeleportView(entry.id(), entry.displayName(),
+					new ClientTeleportState(entry.enabled(), entry.cooldownRemainingSeconds(), null)));
+		}
+		dimensionTeleports = mapped;
 	}
 
 	private static void applyTeleportStatusEntry(ClientTeleportType type, TeleportStatusS2C.StatusEntry entry) {
@@ -239,6 +248,10 @@ public final class ClientIslandCache {
 		// Text.translatable(state.reasonKey()) call needs no change.
 		String translationKey = entry.reasonKey().map(reason -> "islandcoreclient.reason." + reason).orElse(null);
 		TELEPORT_STATES.put(type, new ClientTeleportState(entry.enabled(), entry.cooldownRemainingSeconds(), translationKey));
+	}
+
+	public static List<ClientDimensionTeleportView> getDimensionTeleports() {
+		return dimensionTeleports;
 	}
 
 	public static void applyBiomeTiers(BiomeTiersS2C tiers) {
