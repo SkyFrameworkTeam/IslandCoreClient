@@ -74,6 +74,7 @@ import com.skyframework.islandcoreclient.network.island.IslandUpgradeC2S;
 import com.skyframework.islandcoreclient.network.member.MemberAllyAddC2S;
 import com.skyframework.islandcoreclient.network.member.MemberAllyRemoveC2S;
 import com.skyframework.islandcoreclient.network.member.MemberInviteAcceptC2S;
+import com.skyframework.islandcoreclient.network.member.MemberInviteDeclineC2S;
 import com.skyframework.islandcoreclient.network.member.MemberInviteC2S;
 import com.skyframework.islandcoreclient.network.member.MemberRemoveC2S;
 import com.skyframework.islandcoreclient.network.member.MemberTrustC2S;
@@ -225,6 +226,7 @@ public final class ClientPacketHandlers {
 
 		PayloadTypeRegistry.playC2S().register(MemberInviteC2S.ID, MemberInviteC2S.CODEC);
 		PayloadTypeRegistry.playC2S().register(MemberInviteAcceptC2S.ID, MemberInviteAcceptC2S.CODEC);
+		PayloadTypeRegistry.playC2S().register(MemberInviteDeclineC2S.ID, MemberInviteDeclineC2S.CODEC);
 		PayloadTypeRegistry.playC2S().register(MemberTrustC2S.ID, MemberTrustC2S.CODEC);
 		PayloadTypeRegistry.playC2S().register(MemberRemoveC2S.ID, MemberRemoveC2S.CODEC);
 		PayloadTypeRegistry.playC2S().register(MemberAllyAddC2S.ID, MemberAllyAddC2S.CODEC);

@@ -12,6 +12,7 @@ import com.skyframework.islandcoreclient.network.PendingActionTracker;
 import com.skyframework.islandcoreclient.network.island.IslandCreateC2S;
 import com.skyframework.islandcoreclient.network.island.IslandSnapshotRequestC2S;
 import com.skyframework.islandcoreclient.network.member.MemberInviteAcceptC2S;
+import com.skyframework.islandcoreclient.network.member.MemberInviteDeclineC2S;
 import com.skyframework.islandcoreclient.state.ClientConnectionState;
 import com.skyframework.islandcoreclient.state.ClientIncomingInviteView;
 import com.skyframework.islandcoreclient.state.ClientIslandCache;
@@ -152,11 +153,13 @@ public class DashboardScreen extends BaseMenuScreen {
 						button -> onAcceptInviteClicked())
 				.dimensions(acceptX, inviteButtonY, 66, 16)
 				.build());
-		// "Ignorar" stays local-only: the protocol has no decline call, only accept (see
-		// MemberInviteAcceptC2S) — an ignored invite simply expires server-side on its own.
+		// Clears the banner immediately (optimistic, same as before) and also tells the server to
+		// drop the pending invite via MemberInviteDeclineC2S, so it no longer reappears on the next
+		// snapshot refresh — it used to only be hidden locally while the server-side invite stayed
+		// alive until its own 5-minute timeout.
 		this.ignoreInviteButton = this.addDrawableChild(ButtonWidget.builder(
 						Text.translatable("islandcoreclient.dashboard.invite_ignore"),
-						button -> ClientIslandCache.setIncomingInvite(null))
+						button -> onIgnoreInviteClicked())
 				.dimensions(ignoreX, inviteButtonY, 66, 16)
 				.build());
 
@@ -344,6 +347,13 @@ public class DashboardScreen extends BaseMenuScreen {
 				ClientErrorToasts.showReason(reasonKey);
 			}
 		});
+	}
+
+	private void onIgnoreInviteClicked() {
+		// Clears the banner right away, same as before — no need to wait for the server's ack since
+		// there's no error state worth surfacing here (a stale/expired invite fails harmlessly).
+		ClientIslandCache.setIncomingInvite(null);
+		ClientPlayNetworking.send(new MemberInviteDeclineC2S());
 	}
 
 	private void onAcceptInviteClicked() {
