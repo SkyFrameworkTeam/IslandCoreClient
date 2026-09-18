@@ -292,6 +292,8 @@
 	"islandcoreclient.admin.spawn.authorized_remove": "Quitar",
 	"islandcoreclient.admin.spawn.authorized_add_placeholder": "Nombre del jugador...",
 	"islandcoreclient.admin.spawn.authorized_add_button": "Añadir",
+	"islandcoreclient.admin.spawn.flags_button": "Permisos y General",
+	"islandcoreclient.admin.spawn.flags_title": "Permisos de Spawn",
 	"islandcoreclient.admin.spawn_authorized.title": "Jugadores autorizados de Spawn",
 	"islandcoreclient.admin.spawn_authorized.empty": "No hay ningún jugador autorizado todavía.",
 

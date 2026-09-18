@@ -292,6 +292,8 @@
 	"islandcoreclient.admin.spawn.authorized_remove": "Remove",
 	"islandcoreclient.admin.spawn.authorized_add_placeholder": "Player name...",
 	"islandcoreclient.admin.spawn.authorized_add_button": "Add",
+	"islandcoreclient.admin.spawn.flags_button": "Permissions & General",
+	"islandcoreclient.admin.spawn.flags_title": "Spawn permissions",
 	"islandcoreclient.admin.spawn_authorized.title": "Spawn authorized players",
 	"islandcoreclient.admin.spawn_authorized.empty": "No authorized players yet.",
 
