@@ -5,24 +5,28 @@ import java.util.List;
 import java.util.UUID;
 
 import com.skyframework.islandcoreclient.gui.common.BaseMenuScreen;
-import com.skyframework.islandcoreclient.gui.common.ScrollableRowList;
+import com.skyframework.islandcoreclient.gui.common.ToggleRow;
 import com.skyframework.islandcoreclient.network.ClientErrorToasts;
 import com.skyframework.islandcoreclient.network.PendingActionTracker;
+import com.skyframework.islandcoreclient.network.alliance.LocationSharingSetC2S;
+import com.skyframework.islandcoreclient.network.alliance.LocationSharingStatusRequestC2S;
+import com.skyframework.islandcoreclient.network.island.IslandSnapshotRequestC2S;
+import com.skyframework.islandcoreclient.network.member.MemberAllyAddC2S;
 import com.skyframework.islandcoreclient.network.party.PartyAcceptC2S;
-import com.skyframework.islandcoreclient.network.party.PartyAllyAddC2S;
-import com.skyframework.islandcoreclient.network.party.PartyAllyRemoveC2S;
 import com.skyframework.islandcoreclient.network.party.PartyCreateC2S;
 import com.skyframework.islandcoreclient.network.party.PartyDisbandConfirmC2S;
 import com.skyframework.islandcoreclient.network.party.PartyDisbandRequestC2S;
 import com.skyframework.islandcoreclient.network.party.PartyInviteC2S;
-import com.skyframework.islandcoreclient.network.party.PartyKickC2S;
 import com.skyframework.islandcoreclient.network.party.PartyLeaveC2S;
 import com.skyframework.islandcoreclient.network.party.PartyRenameC2S;
 import com.skyframework.islandcoreclient.network.party.PartyStatusRequestC2S;
-import com.skyframework.islandcoreclient.state.ClientAlliedPartyView;
+import com.skyframework.islandcoreclient.state.ClientAllyLocationView;
+import com.skyframework.islandcoreclient.state.ClientAllyLocationsCache;
 import com.skyframework.islandcoreclient.state.ClientIncomingPartyInviteView;
+import com.skyframework.islandcoreclient.state.ClientIslandCache;
+import com.skyframework.islandcoreclient.state.ClientLocationSharingCache;
+import com.skyframework.islandcoreclient.state.ClientMemberView;
 import com.skyframework.islandcoreclient.state.ClientPartyCache;
-import com.skyframework.islandcoreclient.state.ClientPartyMemberView;
 
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 
@@ -30,100 +34,255 @@ import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.widget.ButtonWidget;
-import net.minecraft.client.gui.widget.ClickableWidget;
 import net.minecraft.client.gui.widget.TextFieldWidget;
+import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
 
 import org.jetbrains.annotations.Nullable;
 
 /**
- * Independent of any island — reachable from the Dashboard whenever the connection is up,
- * regardless of {@code hasIsland} (see DashboardScreen's party button wiring), and directly via
+ * Independent of any island for the party half of this screen — reachable via
  * {@link com.skyframework.islandcoreclient.keybind.OpenPartyKeybind} (default key P) or
- * {@code /islandparty}. Reads/writes exclusively through {@link ClientPartyCache}, never
- * {@code ClientIslandCache}.
+ * {@code /islandparty} regardless of {@code ClientIslandCache.hasIsland()}. As of the "alianzas"
+ * consolidation sprint, this screen ALSO hosts individual-player alliance management (an island
+ * concept — {@code IslandRole.ALLY}, see {@code ClientIslandCache}) and all four location-sharing
+ * toggles, replacing the retired AllianceScreen/Dashboard alliance tab entirely.
  *
- * <p>Two states: no party (create form, plus an incoming-invite banner if one is pending) or has a
- * party (member/allied-party lists — each independently scrollable via {@link ScrollableRowList}
- * so a large party or many alliances never pushes the leader forms or the leave/disband row below
- * the screen — plus leader-only controls: invite, rename, disband with a lightweight 15s confirm
- * mirroring {@code DeleteIslandScreen}'s pattern at a fifth the timeout, and ally add/remove).
- * The leader forms and the leave/disband row are always anchored at a fixed position near the
- * bottom of the screen, computed from the bottom up, so they can never be pushed off-screen by
- * list content — see {@link #computeLayout()}.
+ * <p>Back down to 2 pages (see {@link Page}) after a 3-page detour: splitting Aliados onto its own
+ * page turned out to be more separation than needed once the member LIST itself (the actually
+ * unbounded part) already moved out to {@link PartyMembersScreen} — the compact add-ally FORM
+ * (2 widgets, fixed height) fits comfortably back on Página 1 alongside invite/rename. That screen
+ * now shows members AND allies together (same split {@code AdminIslandDetailScreen} uses for
+ * {@code AdminIslandMembersScreen}), reached via a top-bar "Ver miembros y aliados (N/M)" button in
+ * the same reserved right-hand slot.
+ *
+ * <p>Navigation: "&lt;&lt; Anterior" / "Siguiente &gt;&gt;" at the BOTTOM, left/right-aligned with a
+ * centered page indicator between them — the exact same {@code islandcoreclient.pagination.*}
+ * labels AND position {@code SettingsScreen}'s {@code PagedFlagGrid} pagination row already uses.
+ * {@link #page} is a plain persistent field surviving {@link #clearAndInit()} the same way
+ * {@code PagedFlagGrid#currentPage} does.
+ *
+ * <p><b>Page 1 (PARTY)</b>: party name/leader, invite field+button (leader only), rename field+
+ * button (leader only), add-ally field+button (gated on {@code ClientIslandCache.hasIsland()},
+ * independent of party state/leadership), then "Salir de la party" / "Disolver party" side by side
+ * in the SAME row (leader-only for Disolver). <b>Page 2 (SHARING)</b>: the 4 location-sharing
+ * toggles + [DEBUG], unchanged.
  */
 public class PartyScreen extends BaseMenuScreen {
+	private enum Page {
+		PARTY, SHARING
+	}
+
 	// Mirrors the server's PartyDisbandRequests.TIMEOUT — purely for the local countdown display;
 	// the server is the actual authority on whether a confirm still lands within the window.
 	private static final long DISBAND_CONFIRM_WINDOW_SECONDS = 15L;
 
+	// See AllianceScreen's old javadoc for this same trick, relocated here verbatim: a north offset,
+	// not a random one — "near a known fixed point" for exercising AllyHudRenderer's projection
+	// solo, without a second connected player actually sharing their position.
+	private static final double DEBUG_NORTH_OFFSET = 20.0;
+
 	private static final int CONTENT_X = 16;
 	private static final int LINE_HEIGHT = 11;
-	private static final int ROW_HEIGHT = 20;
-	private static final int ROW_SPACING = 4;
-	private static final int ACTION_BUTTON_WIDTH = 60;
-	private static final int ACTION_BUTTON_HEIGHT = 16;
 	private static final int FIELD_WIDTH = 150;
 	private static final int FIELD_BUTTON_WIDTH = 70;
 	private static final int FORM_ROW_HEIGHT = 20;
-	private static final int FORM_ROW_GAP = 4;
 	private static final int SECTION_GAP = 8;
-	// Members get the larger share of the split between the two scrollable lists.
-	private static final double MEMBER_SHARE = 0.55;
+	private static final int SMALL_GAP = 4;
+	private static final int BOTTOM_BUTTON_WIDTH = 140;
 
 	private static final int INVITE_BANNER_Y = TOP_BAR_HEIGHT + 8;
 	private static final int INVITE_BANNER_HEIGHT = 24;
+	private static final int CONTENT_TOP = TOP_BAR_HEIGHT + 8;
 
-	private record IndexedWidget(int rowIndex, ClickableWidget widget) {
-	}
+	// Same slot DashboardScreen's admin toggle and AdminIslandDetailScreen's "Ver miembros" button
+	// already use — the top bar's reserved right-hand area. Widened from that button's 150 to fit
+	// the combined "N/M" label comfortably.
+	private static final int TOP_BAR_ACTION_WIDTH = 170;
+	private static final int TOP_BAR_ACTION_HEIGHT = 20;
 
-	// All Y positions for the has-party state, computed bottom-up so the leader forms and the
-	// leave/disband row are always anchored at a fixed spot near the bottom regardless of how much
-	// member/allied-party content there is above them.
-	private record Layout(
-			int headerY, int membersHeadingY, int memberListTop, int memberViewportHeight,
-			int alliesHeadingY, int alliedListTop, int alliedViewportHeight,
-			int leaderFormsTop, int bottomButtonY, boolean pendingDisband, boolean isLeader
-	) {
-	}
+	// Exact same constants/position as SettingsScreen's own pagination row (bottom, not top bar).
+	private static final int PAGINATION_ROW_HEIGHT = 20;
+	private static final int PAGINATION_BUTTON_WIDTH = 90;
+	private static final int CONTENT_BOTTOM_MARGIN = 12;
 
 	// 0 = no pending disband request. Screen-local UI flow state, not party data.
 	private long pendingDisbandExpiresAtMillis = 0L;
+	// Persistent across clearAndInit() (a page switch, or any status refresh) — same reasoning as
+	// PagedFlagGrid#currentPage: resetting to page 1 on every unrelated rebuild would be jarring.
+	private Page page = Page.PARTY;
 
 	private TextFieldWidget createNameField;
 	private TextFieldWidget inviteField;
 	private TextFieldWidget renameField;
 	private TextFieldWidget allyField;
 
-	private final ScrollableRowList memberList = new ScrollableRowList(CONTENT_X, 0, 1, 1, ROW_HEIGHT, ROW_SPACING);
-	private final ScrollableRowList alliedList = new ScrollableRowList(CONTENT_X, 0, 1, 1, ROW_HEIGHT, ROW_SPACING);
-	private final List<IndexedWidget> memberRowWidgets = new ArrayList<>();
-	private final List<IndexedWidget> alliedRowWidgets = new ArrayList<>();
-
 	public PartyScreen(Screen parent) {
 		super(Text.translatable("islandcoreclient.party.title"), parent);
 		ClientPlayNetworking.send(new PartyStatusRequestC2S());
+		// Sent once here, not from initContent() — see BiomeScreen's own fix for why: initContent()
+		// reruns on every clearAndInit(), including the one refreshFromNetwork() below does when the
+		// reply to THIS exact request lands, which would otherwise turn into a self-perpetuating
+		// request/rebuild loop.
+		ClientPlayNetworking.send(new LocationSharingStatusRequestC2S());
 	}
 
-	// Called by ClientPacketHandlers when a fresh PartyStatusS2C lands while this screen is open.
+	// Called by ClientPacketHandlers when a fresh PartyStatusS2C/LocationSharingStatusS2C lands
+	// while this screen is open.
 	public void refreshFromNetwork() {
 		this.clearAndInit();
 	}
 
 	@Override
 	protected void initContent() {
+		initTopBar();
+		initPagination();
+
+		switch (page) {
+			case PARTY -> initPartyPage();
+			case SHARING -> initSharingPage();
+		}
+	}
+
+	// "Ver miembros y aliados (N/M)" — same top-bar reserved slot AdminIslandDetailScreen's own
+	// view-members button uses, present on both pages (shared top-bar content). Shown whenever
+	// there's anything to view on either list: a party (even with 0 other members) OR an island
+	// (for its allies) — the merged PartyMembersScreen no longer requires a party to be useful.
+	private void initTopBar() {
+		boolean hasParty = ClientPartyCache.hasParty();
+		boolean hasIsland = ClientIslandCache.hasIsland();
+		if (!hasParty && !hasIsland) {
+			return;
+		}
+		int memberCount = hasParty ? ClientPartyCache.getMembers().size() : 0;
+		int allyCount = currentAllies().size();
+		this.addDrawableChild(ButtonWidget.builder(
+						Text.translatable("islandcoreclient.party.view_members_button", memberCount, allyCount),
+						button -> this.client.setScreen(new PartyMembersScreen(this)))
+				.dimensions(this.width - 8 - TOP_BAR_ACTION_WIDTH, (TOP_BAR_HEIGHT - TOP_BAR_ACTION_HEIGHT) / 2,
+						TOP_BAR_ACTION_WIDTH, TOP_BAR_ACTION_HEIGHT)
+				.build());
+	}
+
+	// "<< Anterior" / "Siguiente >>", bottom-left/bottom-right with a centered page indicator (drawn
+	// in renderContent) — exact same position/labels as SettingsScreen's PagedFlagGrid pagination.
+	private void initPagination() {
+		int paginationY = paginationRowY();
+		Page[] pages = Page.values();
+		int currentIndex = page.ordinal();
+
+		ButtonWidget prevButton = this.addDrawableChild(ButtonWidget.builder(Text.translatable("islandcoreclient.pagination.prev"),
+						button -> onPageChanged(pages[currentIndex - 1]))
+				.dimensions(CONTENT_X, paginationY, PAGINATION_BUTTON_WIDTH, PAGINATION_ROW_HEIGHT)
+				.build());
+		prevButton.active = currentIndex > 0;
+
+		ButtonWidget nextButton = this.addDrawableChild(ButtonWidget.builder(Text.translatable("islandcoreclient.pagination.next"),
+						button -> onPageChanged(pages[currentIndex + 1]))
+				.dimensions(this.width - 16 - PAGINATION_BUTTON_WIDTH, paginationY, PAGINATION_BUTTON_WIDTH, PAGINATION_ROW_HEIGHT)
+				.build());
+		nextButton.active = currentIndex < pages.length - 1;
+	}
+
+	private int paginationRowY() {
+		return this.height - CONTENT_BOTTOM_MARGIN - PAGINATION_ROW_HEIGHT;
+	}
+
+	private void onPageChanged(Page target) {
+		this.page = target;
+		this.clearAndInit();
+	}
+
+	// Purely top-down: invite/rename (leader only) -> add-ally (hasIsland only) -> leave/disband row
+	// — content ends well above the pagination row even in the leader+hasIsland worst case, so no
+	// bottom-up anchoring is needed here (unlike the earlier 3-page design's INFO page) — see the
+	// class javadoc's pixel-math note for the exact numbers.
+	private int bottomRowY(boolean isLeader, boolean hasIsland) {
+		int fieldY = CONTENT_TOP + LINE_HEIGHT + SECTION_GAP;
+		if (isLeader) {
+			fieldY += 2 * (FORM_ROW_HEIGHT + SECTION_GAP); // invite + rename
+		}
+		if (hasIsland) {
+			fieldY += FORM_ROW_HEIGHT + SECTION_GAP; // add-ally
+		}
+		return fieldY;
+	}
+
+	private void initPartyPage() {
 		if (!ClientPartyCache.hasParty()) {
 			initNoPartyContent();
 			return;
 		}
-		initHasPartyContent();
+
+		boolean isLeader = isLocalPlayerLeader();
+		boolean hasIsland = ClientIslandCache.hasIsland();
+		int fieldY = CONTENT_TOP + LINE_HEIGHT + SECTION_GAP;
+
+		if (isLeader) {
+			this.inviteField = new TextFieldWidget(this.textRenderer, CONTENT_X, fieldY, FIELD_WIDTH, FORM_ROW_HEIGHT,
+					Text.translatable("islandcoreclient.party.invite_placeholder"));
+			this.inviteField.setPlaceholder(Text.translatable("islandcoreclient.party.invite_placeholder"));
+			this.inviteField.setMaxLength(32);
+			this.addDrawableChild(this.inviteField);
+			this.addDrawableChild(ButtonWidget.builder(Text.translatable("islandcoreclient.party.invite_button"),
+							button -> onInviteClicked())
+					.dimensions(CONTENT_X + FIELD_WIDTH + 8, fieldY, FIELD_BUTTON_WIDTH, FORM_ROW_HEIGHT)
+					.build());
+			fieldY += FORM_ROW_HEIGHT + SECTION_GAP;
+
+			this.renameField = new TextFieldWidget(this.textRenderer, CONTENT_X, fieldY, FIELD_WIDTH, FORM_ROW_HEIGHT,
+					Text.translatable("islandcoreclient.party.rename_placeholder"));
+			this.renameField.setPlaceholder(Text.translatable("islandcoreclient.party.rename_placeholder"));
+			this.renameField.setMaxLength(32);
+			this.addDrawableChild(this.renameField);
+			this.addDrawableChild(ButtonWidget.builder(Text.translatable("islandcoreclient.party.rename_button"),
+							button -> onRenameClicked())
+					.dimensions(CONTENT_X + FIELD_WIDTH + 8, fieldY, FIELD_BUTTON_WIDTH, FORM_ROW_HEIGHT)
+					.build());
+			fieldY += FORM_ROW_HEIGHT + SECTION_GAP;
+		}
+
+		if (hasIsland) {
+			initAllyForm(fieldY);
+			fieldY += FORM_ROW_HEIGHT + SECTION_GAP;
+		}
+
+		int rowY = fieldY;
+		this.addDrawableChild(ButtonWidget.builder(Text.translatable("islandcoreclient.party.leave_button"),
+						button -> onLeaveClicked())
+				.dimensions(CONTENT_X, rowY, BOTTOM_BUTTON_WIDTH, FORM_ROW_HEIGHT)
+				.build());
+
+		if (isLeader) {
+			boolean pending = pendingDisbandExpiresAtMillis > 0;
+			ButtonWidget disbandButton = this.addDrawableChild(ButtonWidget.builder(
+							(pending
+									? Text.translatable("islandcoreclient.party.disband_confirm_button")
+									: Text.translatable("islandcoreclient.party.disband_request_button"))
+									.formatted(Formatting.RED),
+							button -> onDisbandClicked())
+					.dimensions(this.width - 16 - BOTTOM_BUTTON_WIDTH, rowY, BOTTOM_BUTTON_WIDTH, FORM_ROW_HEIGHT)
+					.build());
+			disbandButton.active = true;
+		}
+	}
+
+	private void initAllyForm(int fieldY) {
+		this.allyField = new TextFieldWidget(this.textRenderer, CONTENT_X, fieldY, FIELD_WIDTH, FORM_ROW_HEIGHT,
+				Text.translatable("islandcoreclient.party.ally_add_placeholder"));
+		this.allyField.setPlaceholder(Text.translatable("islandcoreclient.party.ally_add_placeholder"));
+		this.allyField.setMaxLength(32);
+		this.addDrawableChild(this.allyField);
+		this.addDrawableChild(ButtonWidget.builder(Text.translatable("islandcoreclient.party.ally_add_button"),
+						button -> onAllyAddClicked())
+				.dimensions(CONTENT_X + FIELD_WIDTH + 8, fieldY, FIELD_BUTTON_WIDTH, FORM_ROW_HEIGHT)
+				.build());
 	}
 
 	private void initNoPartyContent() {
 		ClientIncomingPartyInviteView invite = ClientPartyCache.getIncomingInvite();
-		int formY = invite != null ? INVITE_BANNER_Y + INVITE_BANNER_HEIGHT + 16 : TOP_BAR_HEIGHT + 24;
-
+		int fieldY;
 		if (invite != null) {
 			int buttonY = INVITE_BANNER_Y + (INVITE_BANNER_HEIGHT - 16) / 2;
 			int ignoreX = this.width - 16 - 66;
@@ -138,9 +297,12 @@ public class PartyScreen extends BaseMenuScreen {
 							button -> ClientPartyCache.setIncomingInvite(null))
 					.dimensions(ignoreX, buttonY, 66, 16)
 					.build());
+			fieldY = INVITE_BANNER_Y + INVITE_BANNER_HEIGHT + 16;
+		} else {
+			fieldY = CONTENT_TOP + LINE_HEIGHT + SECTION_GAP;
 		}
 
-		this.createNameField = new TextFieldWidget(this.textRenderer, CONTENT_X, formY, FIELD_WIDTH, FORM_ROW_HEIGHT,
+		this.createNameField = new TextFieldWidget(this.textRenderer, CONTENT_X, fieldY, FIELD_WIDTH, FORM_ROW_HEIGHT,
 				Text.translatable("islandcoreclient.party.create_name_placeholder"));
 		this.createNameField.setPlaceholder(Text.translatable("islandcoreclient.party.create_name_placeholder"));
 		this.createNameField.setMaxLength(32);
@@ -148,259 +310,101 @@ public class PartyScreen extends BaseMenuScreen {
 
 		this.addDrawableChild(ButtonWidget.builder(Text.translatable("islandcoreclient.party.create_button"),
 						button -> onCreateClicked())
-				.dimensions(CONTENT_X + FIELD_WIDTH + 8, formY, FIELD_BUTTON_WIDTH, FORM_ROW_HEIGHT)
-				.build());
-	}
-
-	// Bottom-up: reserve the leave/disband row, then (if leader) the disband countdown line and the
-	// 3 leader-form rows above it, then a gap — whatever vertical space remains above that goes to
-	// the two scrollable lists, split MEMBER_SHARE/rest between them. Depends only on screen size
-	// and isLeader/pendingDisband, not on list content, so it's safe to call from both initContent
-	// and renderContent and always get matching Y positions.
-	private Layout computeLayout() {
-		boolean isLeader = isLocalPlayerLeader();
-		boolean pendingDisband = isLeader && pendingDisbandExpiresAtMillis > 0;
-
-		int bottomButtonY = this.height - 16 - FORM_ROW_HEIGHT;
-		int cursor = bottomButtonY;
-		if (pendingDisband) {
-			cursor -= LINE_HEIGHT + 4;
-		}
-		int leaderFormsTop = cursor;
-		if (isLeader) {
-			int formsHeight = 3 * FORM_ROW_HEIGHT + 2 * FORM_ROW_GAP;
-			cursor -= formsHeight;
-			leaderFormsTop = cursor;
-			cursor -= SECTION_GAP;
-		}
-		int listsBottom = cursor;
-
-		int headerY = TOP_BAR_HEIGHT + 8;
-		int membersHeadingY = headerY + LINE_HEIGHT + 6;
-		int memberListTop = membersHeadingY + LINE_HEIGHT + 6;
-
-		int totalListsHeight = Math.max(0, listsBottom - memberListTop);
-		int alliesHeadingReserve = LINE_HEIGHT + 6;
-		int splittable = Math.max(0, totalListsHeight - alliesHeadingReserve);
-		int memberViewportHeight = Math.max(ROW_HEIGHT, (int) (splittable * MEMBER_SHARE));
-		int alliesHeadingY = memberListTop + memberViewportHeight + 6;
-		int alliedListTop = alliesHeadingY + LINE_HEIGHT + 6;
-		int alliedViewportHeight = Math.max(ROW_HEIGHT, listsBottom - alliedListTop);
-
-		return new Layout(headerY, membersHeadingY, memberListTop, memberViewportHeight,
-				alliesHeadingY, alliedListTop, alliedViewportHeight,
-				leaderFormsTop, bottomButtonY, pendingDisband, isLeader);
-	}
-
-	private void initHasPartyContent() {
-		Layout layout = computeLayout();
-		int viewportWidth = this.width - CONTENT_X - 16;
-		memberList.setViewport(CONTENT_X, layout.memberListTop(), viewportWidth, layout.memberViewportHeight());
-		alliedList.setViewport(CONTENT_X, layout.alliedListTop(), viewportWidth, layout.alliedViewportHeight());
-
-		int actionsX = this.width - 16 - ACTION_BUTTON_WIDTH;
-		UUID localUuid = localPlayerUuid();
-
-		List<ClientPartyMemberView> members = ClientPartyCache.getMembers();
-		memberList.setItemCount(members.size());
-		memberRowWidgets.clear();
-		for (int i = 0; i < members.size(); i++) {
-			ClientPartyMemberView member = members.get(i);
-			if (layout.isLeader() && localUuid != null && !member.uuid().equals(localUuid)) {
-				int buttonY = memberList.getRowY(i) + (ROW_HEIGHT - ACTION_BUTTON_HEIGHT) / 2;
-				boolean rowVisible = memberList.isRowVisible(i);
-				ButtonWidget button = this.addDrawableChild(ButtonWidget.builder(Text.translatable("islandcoreclient.party.kick"),
-								b -> onKickClicked(member.uuid()))
-						.dimensions(actionsX, buttonY, ACTION_BUTTON_WIDTH, ACTION_BUTTON_HEIGHT)
-						.build());
-				button.visible = rowVisible;
-				button.active = rowVisible;
-				memberRowWidgets.add(new IndexedWidget(i, button));
-			}
-		}
-
-		List<ClientAlliedPartyView> allied = ClientPartyCache.getAlliedParties();
-		alliedList.setItemCount(allied.size());
-		alliedRowWidgets.clear();
-		for (int i = 0; i < allied.size(); i++) {
-			ClientAlliedPartyView party = allied.get(i);
-			if (layout.isLeader()) {
-				int buttonY = alliedList.getRowY(i) + (ROW_HEIGHT - ACTION_BUTTON_HEIGHT) / 2;
-				boolean rowVisible = alliedList.isRowVisible(i);
-				ButtonWidget button = this.addDrawableChild(ButtonWidget.builder(Text.translatable("islandcoreclient.party.ally_remove"),
-								b -> onAllyRemoveClicked(party.name()))
-						.dimensions(actionsX, buttonY, ACTION_BUTTON_WIDTH, ACTION_BUTTON_HEIGHT)
-						.build());
-				button.visible = rowVisible;
-				button.active = rowVisible;
-				alliedRowWidgets.add(new IndexedWidget(i, button));
-			}
-		}
-
-		if (layout.isLeader()) {
-			initLeaderForms(layout.leaderFormsTop());
-		}
-
-		this.addDrawableChild(ButtonWidget.builder(Text.translatable("islandcoreclient.party.leave_button"),
-						button -> onLeaveClicked())
-				.dimensions(CONTENT_X, layout.bottomButtonY(), 140, FORM_ROW_HEIGHT)
-				.build());
-
-		if (layout.isLeader()) {
-			boolean pending = pendingDisbandExpiresAtMillis > 0;
-			ButtonWidget disbandButton = this.addDrawableChild(ButtonWidget.builder(
-							(pending
-									? Text.translatable("islandcoreclient.party.disband_confirm_button")
-									: Text.translatable("islandcoreclient.party.disband_request_button"))
-									.formatted(Formatting.RED),
-							button -> onDisbandClicked())
-					.dimensions(this.width - 16 - 140, layout.bottomButtonY(), 140, FORM_ROW_HEIGHT)
-					.build());
-			disbandButton.active = true;
-		}
-	}
-
-	private void initLeaderForms(int fieldY) {
-		this.inviteField = new TextFieldWidget(this.textRenderer, CONTENT_X, fieldY, FIELD_WIDTH, FORM_ROW_HEIGHT,
-				Text.translatable("islandcoreclient.party.invite_placeholder"));
-		this.inviteField.setPlaceholder(Text.translatable("islandcoreclient.party.invite_placeholder"));
-		this.inviteField.setMaxLength(32);
-		this.addDrawableChild(this.inviteField);
-		this.addDrawableChild(ButtonWidget.builder(Text.translatable("islandcoreclient.party.invite_button"),
-						button -> onInviteClicked())
 				.dimensions(CONTENT_X + FIELD_WIDTH + 8, fieldY, FIELD_BUTTON_WIDTH, FORM_ROW_HEIGHT)
 				.build());
-		fieldY += FORM_ROW_HEIGHT + FORM_ROW_GAP;
 
-		this.renameField = new TextFieldWidget(this.textRenderer, CONTENT_X, fieldY, FIELD_WIDTH, FORM_ROW_HEIGHT,
-				Text.translatable("islandcoreclient.party.rename_placeholder"));
-		this.renameField.setPlaceholder(Text.translatable("islandcoreclient.party.rename_placeholder"));
-		this.renameField.setMaxLength(32);
-		this.addDrawableChild(this.renameField);
-		this.addDrawableChild(ButtonWidget.builder(Text.translatable("islandcoreclient.party.rename_button"),
-						button -> onRenameClicked())
-				.dimensions(CONTENT_X + FIELD_WIDTH + 8, fieldY, FIELD_BUTTON_WIDTH, FORM_ROW_HEIGHT)
-				.build());
-		fieldY += FORM_ROW_HEIGHT + FORM_ROW_GAP;
-
-		this.allyField = new TextFieldWidget(this.textRenderer, CONTENT_X, fieldY, FIELD_WIDTH, FORM_ROW_HEIGHT,
-				Text.translatable("islandcoreclient.party.ally_add_placeholder"));
-		this.allyField.setPlaceholder(Text.translatable("islandcoreclient.party.ally_add_placeholder"));
-		this.allyField.setMaxLength(32);
-		this.addDrawableChild(this.allyField);
-		this.addDrawableChild(ButtonWidget.builder(Text.translatable("islandcoreclient.party.ally_add_button"),
-						button -> onAllyAddClicked())
-				.dimensions(CONTENT_X + FIELD_WIDTH + 8, fieldY, FIELD_BUTTON_WIDTH, FORM_ROW_HEIGHT)
-				.build());
+		// Ally management is island-scoped, not party-scoped — still offered here with no party at
+		// all, same as it always has been.
+		if (ClientIslandCache.hasIsland()) {
+			initAllyForm(fieldY + FORM_ROW_HEIGHT + SECTION_GAP);
+		}
 	}
 
-	@Override
-	public boolean mouseScrolled(double mouseX, double mouseY, double horizontalAmount, double verticalAmount) {
-		if (ClientPartyCache.hasParty()) {
-			if (memberList.isMouseOver(mouseX, mouseY)) {
-				memberList.scroll(verticalAmount);
-				repositionRows(memberList, memberRowWidgets);
-				return true;
-			}
-			if (alliedList.isMouseOver(mouseX, mouseY)) {
-				alliedList.scroll(verticalAmount);
-				repositionRows(alliedList, alliedRowWidgets);
-				return true;
-			}
-		}
-		return super.mouseScrolled(mouseX, mouseY, horizontalAmount, verticalAmount);
+	private static List<ClientMemberView> currentAllies() {
+		return ClientIslandCache.getMembers().stream().filter(member -> member.role() == ClientMemberView.Role.ALLY).toList();
 	}
 
-	private static void repositionRows(ScrollableRowList list, List<IndexedWidget> widgets) {
-		for (IndexedWidget iw : widgets) {
-			boolean visible = list.isRowVisible(iw.rowIndex());
-			iw.widget().setY(list.getRowY(iw.rowIndex()));
-			iw.widget().visible = visible;
-			iw.widget().active = visible;
-		}
+	// Page 2: the 4 independent location-sharing toggles (see PlayerLocationSharingConfig
+	// server-side) plus [DEBUG] — always shown regardless of party/island state (toggling "share
+	// with my party" with no party, or "share with my allies" with no island, is simply inert
+	// server-side, not an error). Alone on its own page, plenty of fixed top-down room.
+	private void initSharingPage() {
+		int toggleWidth = (this.width - CONTENT_X - 16 - SMALL_GAP) / 2;
+		int y = CONTENT_TOP;
+
+		this.addDrawableChild(new ToggleRow(CONTENT_X, y, toggleWidth, FORM_ROW_HEIGHT,
+				Text.translatable("islandcoreclient.party.send_to_party_label"),
+				ClientLocationSharingCache.isSendPositionToPartyEnabled(), true, this::onSendToPartyToggled));
+		this.addDrawableChild(new ToggleRow(CONTENT_X + toggleWidth + SMALL_GAP, y, toggleWidth, FORM_ROW_HEIGHT,
+				Text.translatable("islandcoreclient.party.receive_from_party_label"),
+				ClientLocationSharingCache.isReceivePositionsFromPartyEnabled(), true, this::onReceiveFromPartyToggled));
+		y += FORM_ROW_HEIGHT + SMALL_GAP;
+
+		this.addDrawableChild(new ToggleRow(CONTENT_X, y, toggleWidth, FORM_ROW_HEIGHT,
+				Text.translatable("islandcoreclient.party.send_to_allies_label"),
+				ClientLocationSharingCache.isSendPositionToAlliesEnabled(), true, this::onSendToAlliesToggled));
+		this.addDrawableChild(new ToggleRow(CONTENT_X + toggleWidth + SMALL_GAP, y, toggleWidth, FORM_ROW_HEIGHT,
+				Text.translatable("islandcoreclient.party.receive_from_allies_label"),
+				ClientLocationSharingCache.isReceivePositionsFromAlliesEnabled(), true, this::onReceiveFromAlliesToggled));
+		y += FORM_ROW_HEIGHT + SECTION_GAP;
+
+		this.addDrawableChild(ButtonWidget.builder(
+						ClientAllyLocationsCache.hasDebugEntry()
+								? Text.translatable("islandcoreclient.party.debug_remove_button")
+								: Text.translatable("islandcoreclient.party.debug_add_button"),
+						button -> onDebugToggleClicked())
+				.dimensions(CONTENT_X, y, FIELD_WIDTH, FORM_ROW_HEIGHT)
+				.build());
 	}
 
 	@Override
 	protected void renderContent(DrawContext context, int mouseX, int mouseY, float delta) {
-		if (!ClientPartyCache.hasParty()) {
-			renderNoPartyContent(context);
-			return;
-		}
-		renderHasPartyContent(context);
-	}
-
-	private void renderNoPartyContent(DrawContext context) {
-		ClientIncomingPartyInviteView invite = ClientPartyCache.getIncomingInvite();
-		if (invite != null) {
-			context.fill(16, INVITE_BANNER_Y, this.width - 16, INVITE_BANNER_Y + INVITE_BANNER_HEIGHT, 0xC0224488);
-			context.drawTextWithShadow(this.textRenderer,
-					Text.translatable("islandcoreclient.party.invite_banner", invite.inviterName(), invite.partyName()),
-					20, INVITE_BANNER_Y + (INVITE_BANNER_HEIGHT - this.textRenderer.fontHeight) / 2, 0xFFFFFF);
-		} else {
-			context.drawTextWithShadow(this.textRenderer,
-					Text.translatable("islandcoreclient.party.no_party"), CONTENT_X, TOP_BAR_HEIGHT + 8, 0xAAAAAA);
-		}
-	}
-
-	private void renderHasPartyContent(DrawContext context) {
 		if (pendingDisbandExpiresAtMillis > 0 && System.currentTimeMillis() >= pendingDisbandExpiresAtMillis) {
 			pendingDisbandExpiresAtMillis = 0L;
 			this.clearAndInit();
 			return;
 		}
 
-		Layout layout = computeLayout();
+		Page[] pages = Page.values();
+		Text indicator = Text.translatable("islandcoreclient.pagination.page_indicator", page.ordinal() + 1, pages.length);
+		int indicatorWidth = this.textRenderer.getWidth(indicator);
+		context.drawTextWithShadow(this.textRenderer, indicator, this.width / 2 - indicatorWidth / 2,
+				paginationRowY() + (PAGINATION_ROW_HEIGHT - this.textRenderer.fontHeight) / 2, 0xAAAAAA);
+
+		if (page == Page.PARTY) {
+			renderPartyPage(context);
+		}
+	}
+
+	private void renderPartyPage(DrawContext context) {
+		if (!ClientPartyCache.hasParty()) {
+			ClientIncomingPartyInviteView invite = ClientPartyCache.getIncomingInvite();
+			if (invite != null) {
+				context.fill(16, INVITE_BANNER_Y, this.width - 16, INVITE_BANNER_Y + INVITE_BANNER_HEIGHT, 0xC0224488);
+				context.drawTextWithShadow(this.textRenderer,
+						Text.translatable("islandcoreclient.party.invite_banner", invite.inviterName(), invite.partyName()),
+						20, INVITE_BANNER_Y + (INVITE_BANNER_HEIGHT - this.textRenderer.fontHeight) / 2, 0xFFFFFF);
+			} else {
+				context.drawTextWithShadow(this.textRenderer,
+						Text.translatable("islandcoreclient.party.no_party"), CONTENT_X, CONTENT_TOP, 0xAAAAAA);
+			}
+			return;
+		}
 
 		context.drawTextWithShadow(this.textRenderer,
 				Text.translatable("islandcoreclient.party.header", ClientPartyCache.getName(), ClientPartyCache.getLeaderName())
-						.formatted(Formatting.BOLD), CONTENT_X, layout.headerY(), 0xFFFFFF);
+						.formatted(Formatting.BOLD), CONTENT_X, CONTENT_TOP, 0xFFFFFF);
 
-		context.drawTextWithShadow(this.textRenderer,
-				Text.translatable("islandcoreclient.party.members_heading", ClientPartyCache.getMembers().size())
-						.formatted(Formatting.BOLD, Formatting.GOLD), CONTENT_X, layout.membersHeadingY(), 0xFFFFFF);
-
-		List<ClientPartyMemberView> members = ClientPartyCache.getMembers();
-		memberList.startClip(context);
-		for (int i = 0; i < members.size(); i++) {
-			if (!memberList.isRowVisible(i)) {
-				continue;
-			}
-			ClientPartyMemberView member = members.get(i);
-			boolean isLeaderRow = member.uuid().equals(ClientPartyCache.getLeaderUuid());
-			Text nameLine = Text.literal(member.name())
-					.append(isLeaderRow ? Text.translatable("islandcoreclient.party.leader_suffix").formatted(Formatting.GOLD) : Text.empty());
-			int y = memberList.getRowY(i);
-			context.drawTextWithShadow(this.textRenderer, nameLine, CONTENT_X, y + (ROW_HEIGHT - this.textRenderer.fontHeight) / 2, 0xFFFFFF);
-		}
-		memberList.endClip(context);
-		memberList.renderScrollbar(context);
-
-		context.drawTextWithShadow(this.textRenderer,
-				Text.translatable("islandcoreclient.party.allies_heading").formatted(Formatting.BOLD, Formatting.YELLOW), CONTENT_X, layout.alliesHeadingY(), 0xFFFFFF);
-
-		List<ClientAlliedPartyView> allied = ClientPartyCache.getAlliedParties();
-		if (allied.isEmpty()) {
-			context.drawTextWithShadow(this.textRenderer,
-					Text.translatable("islandcoreclient.party.allies_empty"), CONTENT_X, layout.alliedListTop(), 0xAAAAAA);
-		} else {
-			alliedList.startClip(context);
-			for (int i = 0; i < allied.size(); i++) {
-				if (!alliedList.isRowVisible(i)) {
-					continue;
-				}
-				ClientAlliedPartyView party = allied.get(i);
-				int y = alliedList.getRowY(i);
-				context.drawTextWithShadow(this.textRenderer, Text.literal(party.name()), CONTENT_X, y + (ROW_HEIGHT - this.textRenderer.fontHeight) / 2, 0xFFFFFF);
-			}
-			alliedList.endClip(context);
-			alliedList.renderScrollbar(context);
-		}
-
-		if (layout.isLeader() && pendingDisbandExpiresAtMillis > 0) {
+		boolean isLeader = isLocalPlayerLeader();
+		if (isLeader && pendingDisbandExpiresAtMillis > 0) {
 			long remaining = Math.max(0L, (pendingDisbandExpiresAtMillis - System.currentTimeMillis()) / 1000L);
+			// Below the leave/disband row, full width — NOT above the (narrow, 140px) Disolver
+			// button column: this string is ~170px+ rendered, too wide to fit stacked there without
+			// running past the window edge or into the ally-form column on the left.
+			int rowY = bottomRowY(true, ClientIslandCache.hasIsland());
 			context.drawTextWithShadow(this.textRenderer,
 					Text.translatable("islandcoreclient.party.disband_pending", remaining).formatted(Formatting.RED),
-					CONTENT_X, layout.bottomButtonY() - LINE_HEIGHT - 4, 0xFFFFFF);
+					CONTENT_X, rowY + FORM_ROW_HEIGHT + 4, 0xFFFFFF);
 		}
 	}
 
@@ -452,18 +456,6 @@ public class PartyScreen extends BaseMenuScreen {
 		ClientPlayNetworking.send(new PartyInviteC2S(targetName));
 		PendingActionTracker.await((success, reasonKey) -> {
 			if (!success) {
-				ClientErrorToasts.showReason(reasonKey);
-			}
-			this.clearAndInit();
-		});
-	}
-
-	private void onKickClicked(UUID targetUuid) {
-		ClientPlayNetworking.send(new PartyKickC2S(targetUuid));
-		PendingActionTracker.await((success, reasonKey) -> {
-			if (success) {
-				ClientPlayNetworking.send(new PartyStatusRequestC2S());
-			} else {
 				ClientErrorToasts.showReason(reasonKey);
 			}
 			this.clearAndInit();
@@ -527,15 +519,19 @@ public class PartyScreen extends BaseMenuScreen {
 		});
 	}
 
+	// An ally doesn't have to already be a member of anything — same "type a name, resolve
+	// server-side" flow the invite field uses.
 	private void onAllyAddClicked() {
-		String targetPartyName = this.allyField.getText().trim();
-		if (targetPartyName.isEmpty()) {
+		String targetName = this.allyField.getText().trim();
+		if (targetName.isEmpty()) {
 			return;
 		}
-		ClientPlayNetworking.send(new PartyAllyAddC2S(targetPartyName));
+		ClientPlayNetworking.send(new MemberAllyAddC2S(targetName));
 		PendingActionTracker.await((success, reasonKey) -> {
 			if (success) {
-				ClientPlayNetworking.send(new PartyStatusRequestC2S());
+				// The real uuid/name for the new ALLY entry comes back on the next island snapshot —
+				// ClientIslandCache stays the single source of truth for it, not guessed locally here.
+				ClientPlayNetworking.send(new IslandSnapshotRequestC2S());
 			} else {
 				ClientErrorToasts.showReason(reasonKey);
 			}
@@ -543,15 +539,67 @@ public class PartyScreen extends BaseMenuScreen {
 		});
 	}
 
-	private void onAllyRemoveClicked(String targetPartyName) {
-		ClientPlayNetworking.send(new PartyAllyRemoveC2S(targetPartyName));
+	// ToggleRow already flipped itself optimistically before each of these runs — same pattern
+	// SettingsScreen's flag toggles use. LocationSharingSetC2S always carries all four fields, so the
+	// other three are read straight from the cache rather than assumed unchanged.
+	private void onSendToPartyToggled(boolean newValue) {
+		boolean previous = ClientLocationSharingCache.isSendPositionToPartyEnabled();
+		ClientLocationSharingCache.setSendPositionToParty(newValue);
+		sendLocationSharingUpdate(previous, ClientLocationSharingCache::setSendPositionToParty);
+	}
+
+	private void onReceiveFromPartyToggled(boolean newValue) {
+		boolean previous = ClientLocationSharingCache.isReceivePositionsFromPartyEnabled();
+		ClientLocationSharingCache.setReceivePositionsFromParty(newValue);
+		sendLocationSharingUpdate(previous, ClientLocationSharingCache::setReceivePositionsFromParty);
+	}
+
+	private void onSendToAlliesToggled(boolean newValue) {
+		boolean previous = ClientLocationSharingCache.isSendPositionToAlliesEnabled();
+		ClientLocationSharingCache.setSendPositionToAllies(newValue);
+		sendLocationSharingUpdate(previous, ClientLocationSharingCache::setSendPositionToAllies);
+	}
+
+	private void onReceiveFromAlliesToggled(boolean newValue) {
+		boolean previous = ClientLocationSharingCache.isReceivePositionsFromAlliesEnabled();
+		ClientLocationSharingCache.setReceivePositionsFromAllies(newValue);
+		sendLocationSharingUpdate(previous, ClientLocationSharingCache::setReceivePositionsFromAllies);
+	}
+
+	@FunctionalInterface
+	private interface Revert {
+		void revert(boolean previousValue);
+	}
+
+	private void sendLocationSharingUpdate(boolean previousValueForRevert, Revert revert) {
+		ClientPlayNetworking.send(new LocationSharingSetC2S(
+				ClientLocationSharingCache.isSendPositionToPartyEnabled(),
+				ClientLocationSharingCache.isReceivePositionsFromPartyEnabled(),
+				ClientLocationSharingCache.isSendPositionToAlliesEnabled(),
+				ClientLocationSharingCache.isReceivePositionsFromAlliesEnabled()));
 		PendingActionTracker.await((success, reasonKey) -> {
-			if (success) {
-				ClientPlayNetworking.send(new PartyStatusRequestC2S());
-			} else {
+			if (!success) {
+				revert.revert(previousValueForRevert);
 				ClientErrorToasts.showReason(reasonKey);
+				this.clearAndInit();
 			}
-			this.clearAndInit();
 		});
+	}
+
+	// [DEBUG] Injects (or removes) a fake ally DEBUG_NORTH_OFFSET blocks north of the local player
+	// into ClientAllyLocationsCache, entirely client-side (no packet sent) — lets AllyHudRenderer's
+	// on-screen/off-screen projection be exercised solo, without a second connected player actually
+	// sharing their position. Relocated verbatim from the old AllianceScreen.
+	private void onDebugToggleClicked() {
+		if (ClientAllyLocationsCache.hasDebugEntry()) {
+			ClientAllyLocationsCache.setDebugEntry(null);
+		} else {
+			PlayerEntity player = MinecraftClient.getInstance().player;
+			if (player != null) {
+				ClientAllyLocationsCache.setDebugEntry(new ClientAllyLocationView(
+						UUID.randomUUID(), "DEBUG", player.getX(), player.getY(), player.getZ() - DEBUG_NORTH_OFFSET));
+			}
+		}
+		this.clearAndInit();
 	}
 }

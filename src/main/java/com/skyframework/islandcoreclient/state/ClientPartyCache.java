@@ -18,7 +18,6 @@ public final class ClientPartyCache {
 	private static volatile String leaderName = "";
 
 	private static final List<ClientPartyMemberView> MEMBERS = new ArrayList<>();
-	private static final List<ClientAlliedPartyView> ALLIED_PARTIES = new ArrayList<>();
 
 	@Nullable
 	private static volatile ClientIncomingPartyInviteView incomingInvite = null;
@@ -36,11 +35,6 @@ public final class ClientPartyCache {
 		MEMBERS.clear();
 		for (PartyStatusS2C.MemberEntry entry : status.members()) {
 			MEMBERS.add(new ClientPartyMemberView(entry.uuid(), entry.name()));
-		}
-
-		ALLIED_PARTIES.clear();
-		for (PartyStatusS2C.AlliedPartyEntry entry : status.alliedParties()) {
-			ALLIED_PARTIES.add(new ClientAlliedPartyView(entry.partyId(), entry.name()));
 		}
 
 		incomingInvite = status.incomingInvite()
@@ -74,10 +68,6 @@ public final class ClientPartyCache {
 
 	public static List<ClientPartyMemberView> getMembers() {
 		return MEMBERS;
-	}
-
-	public static List<ClientAlliedPartyView> getAlliedParties() {
-		return ALLIED_PARTIES;
 	}
 
 	@Nullable

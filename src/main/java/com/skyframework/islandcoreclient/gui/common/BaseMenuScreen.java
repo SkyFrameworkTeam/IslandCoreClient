@@ -57,11 +57,15 @@ public abstract class BaseMenuScreen extends Screen {
 		context.fill(0, 0, this.width, TOP_BAR_HEIGHT, 0xC0000000);
 		context.drawHorizontalLine(0, this.width - 1, TOP_BAR_HEIGHT, 0xFFFFFFFF);
 
-		int titleX = this.parent != null ? BAR_PADDING + BACK_BUTTON_WIDTH + BAR_PADDING : BAR_PADDING;
+		int titleX = titleX();
 		int titleY = (TOP_BAR_HEIGHT - this.textRenderer.fontHeight) / 2;
 		context.drawTextWithShadow(this.textRenderer, this.title, titleX, titleY, 0xFFFFFF);
 
 		// Right edge intentionally left blank: reserved for a future "Admin" button.
+	}
+
+	private int titleX() {
+		return this.parent != null ? BAR_PADDING + BACK_BUTTON_WIDTH + BAR_PADDING : BAR_PADDING;
 	}
 
 	// Called every frame, below the shared top bar.

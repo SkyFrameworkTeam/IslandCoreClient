@@ -146,6 +146,14 @@ public class DimensionManagerScreen extends BaseMenuScreen {
 		// before this Y, which the previous flat offset didn't account for, letting these buttons'
 		// top edge overlap that text.
 		int buttonY = SUB_BACK_Y + 20 + LINE_HEIGHT * 4 + 16 + LINE_HEIGHT * 2;
+		if (pending) {
+			// One more line of clearance below the "Regeneración/Eliminación solicitada — expira en
+			// Xs" countdown renderDetailContent draws right above this Y in the pending case — it was
+			// landing right on top of the confirm button (the only one visible while pending) without
+			// this. Conditional so the normal (non-pending) regenerate/delete row keeps its original,
+			// already pixel-budgeted position instead.
+			buttonY += LINE_HEIGHT;
+		}
 
 		ButtonWidget regenerateButton = this.addDrawableChild(ButtonWidget.builder(
 						Text.translatable("islandcoreclient.admin.dimension_manager.regenerate_button"),

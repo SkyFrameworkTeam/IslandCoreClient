@@ -286,7 +286,11 @@ public class DashboardScreen extends BaseMenuScreen {
 		}
 
 		int x = 16;
-		int y = CONTENT_START_Y;
+		// CONTENT_START_Y only when the invite banner is actually drawn above — it used to be a
+		// fixed constant that always reserved that banner's height (32px, ~3 lines) even when
+		// hasInvite is false (the common case), pushing the summary/members content down for no
+		// reason. See the class-level note on this bug.
+		int y = hasInvite ? CONTENT_START_Y : INVITE_BANNER_Y;
 		int primaryColor = hasIsland ? 0xFFFFFF : 0x777777;
 		int secondaryColor = hasIsland ? 0xDDDDDD : 0x777777;
 

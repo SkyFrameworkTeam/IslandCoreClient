@@ -1,5 +1,6 @@
 package com.skyframework.islandcoreclient;
 
+import com.skyframework.islandcoreclient.hud.AllyHudRenderer;
 import com.skyframework.islandcoreclient.keybind.OpenMenuKeybind;
 import com.skyframework.islandcoreclient.keybind.OpenPartyKeybind;
 import com.skyframework.islandcoreclient.network.ClientPacketHandlers;
@@ -19,6 +20,7 @@ public class IslandCoreClientMod implements ClientModInitializer {
 		ClientPacketHandlers.register();
 		OpenMenuKeybind.register();
 		OpenPartyKeybind.register();
+		AllyHudRenderer.register();
 
 		LOGGER.info("IslandCore Client initialized.");
 	}

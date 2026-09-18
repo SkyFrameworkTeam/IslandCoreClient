@@ -21,6 +21,9 @@ import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
 
+// TODO (future sprint, not yet implemented): add a non-clickable (ⓘ) info icon next to each locked
+// tier that explains how to unlock it on hover (e.g. "pídeselo a un administrador"), separate from
+// the existing per-button Tooltip that just names the missing permission.
 public class BiomeScreen extends BaseMenuScreen {
 	// Neither IslandSnapshotS2C nor BiomeTiersS2C exposes the island's current biome-change
 	// cooldown remaining, or which biome is currently applied — see ClientIslandCache's notes.
@@ -42,6 +45,14 @@ public class BiomeScreen extends BaseMenuScreen {
 
 	public BiomeScreen(Screen parent) {
 		super(Text.translatable("islandcoreclient.biome.title"), parent);
+		// Sent once here, NOT from initContent(): initContent() reruns on every clearAndInit(),
+		// including the one refreshFromNetwork() below does when the reply to THIS exact request
+		// lands — sending it from initContent() turned that into a self-perpetuating
+		// request/rebuild loop (a fresh BiomeTiersS2C arriving, rebuilding all buttons — including
+		// each locked tier's Tooltip, resetting its hover timer — which sent another request, ad
+		// infinitum), which is what made the locked-tier tooltip flicker nonstop instead of holding
+		// steady. Same one-shot-in-constructor pattern AllianceScreen already uses.
+		ClientPlayNetworking.send(new BiomeTiersRequestC2S());
 	}
 
 	// Called by ClientPacketHandlers when a fresh BiomeTiersS2C lands while this screen is open —
@@ -55,8 +66,6 @@ public class BiomeScreen extends BaseMenuScreen {
 
 	@Override
 	protected void initContent() {
-		ClientPlayNetworking.send(new BiomeTiersRequestC2S());
-
 		boolean cooldownActive = ClientIslandCache.getBiomeCooldownRemainingSeconds() > 0;
 		String currentBiomeId = ClientIslandCache.getCurrentBiomeId();
 

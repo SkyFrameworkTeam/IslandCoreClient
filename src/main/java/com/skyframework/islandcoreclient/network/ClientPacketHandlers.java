@@ -11,7 +11,12 @@ import com.skyframework.islandcoreclient.gui.admin.VanillaResetScreen;
 import com.skyframework.islandcoreclient.gui.island.BiomeScreen;
 import com.skyframework.islandcoreclient.gui.island.SettingsScreen;
 import com.skyframework.islandcoreclient.gui.island.TeleportsScreen;
+import com.skyframework.islandcoreclient.gui.party.PartyMembersScreen;
 import com.skyframework.islandcoreclient.gui.party.PartyScreen;
+import com.skyframework.islandcoreclient.network.alliance.AllyLocationsS2C;
+import com.skyframework.islandcoreclient.network.alliance.LocationSharingSetC2S;
+import com.skyframework.islandcoreclient.network.alliance.LocationSharingStatusRequestC2S;
+import com.skyframework.islandcoreclient.network.alliance.LocationSharingStatusS2C;
 import com.skyframework.islandcoreclient.network.admin.dimension.DimensionCreateC2S;
 import com.skyframework.islandcoreclient.network.admin.dimension.DimensionDeleteC2S;
 import com.skyframework.islandcoreclient.network.admin.dimension.DimensionDeleteConfirmC2S;
@@ -73,8 +78,6 @@ import com.skyframework.islandcoreclient.network.member.MemberInviteC2S;
 import com.skyframework.islandcoreclient.network.member.MemberRemoveC2S;
 import com.skyframework.islandcoreclient.network.member.MemberTrustC2S;
 import com.skyframework.islandcoreclient.network.party.PartyAcceptC2S;
-import com.skyframework.islandcoreclient.network.party.PartyAllyAddC2S;
-import com.skyframework.islandcoreclient.network.party.PartyAllyRemoveC2S;
 import com.skyframework.islandcoreclient.network.party.PartyCreateC2S;
 import com.skyframework.islandcoreclient.network.party.PartyDisbandConfirmC2S;
 import com.skyframework.islandcoreclient.network.party.PartyDisbandRequestC2S;
@@ -88,8 +91,11 @@ import com.skyframework.islandcoreclient.network.teleport.TeleportRequestC2S;
 import com.skyframework.islandcoreclient.network.teleport.TeleportStatusRequestC2S;
 import com.skyframework.islandcoreclient.network.teleport.TeleportStatusS2C;
 import com.skyframework.islandcoreclient.state.ClientAdminDefaultsCache;
+import com.skyframework.islandcoreclient.state.ClientAllyLocationView;
+import com.skyframework.islandcoreclient.state.ClientAllyLocationsCache;
 import com.skyframework.islandcoreclient.state.ClientConnectionState;
 import com.skyframework.islandcoreclient.state.ClientIslandCache;
+import com.skyframework.islandcoreclient.state.ClientLocationSharingCache;
 import com.skyframework.islandcoreclient.state.ClientPartyCache;
 
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
@@ -99,6 +105,9 @@ import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
 
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.screen.Screen;
+
+import java.util.ArrayList;
+import java.util.List;
 
 public final class ClientPacketHandlers {
 	private ClientPacketHandlers() {
@@ -162,6 +171,8 @@ public final class ClientPacketHandlers {
 			ClientPartyCache.applyStatus(payload);
 			if (MinecraftClient.getInstance().currentScreen instanceof PartyScreen screen) {
 				screen.refreshFromNetwork();
+			} else if (MinecraftClient.getInstance().currentScreen instanceof PartyMembersScreen screen) {
+				screen.refreshFromNetwork();
 			}
 		});
 
@@ -176,6 +187,7 @@ public final class ClientPacketHandlers {
 				PendingActionTracker.onActionResult(payload));
 
 		registerAdminHandlers();
+		registerLocationSharingHandlers();
 
 		// The server may not implement this protocol at all (e.g. IslandCore hasn't shipped its
 		// networking yet): sending is safe regardless, the packet is simply dropped if unhandled.
@@ -249,8 +261,6 @@ public final class ClientPacketHandlers {
 		PayloadTypeRegistry.playC2S().register(PartyRenameC2S.ID, PartyRenameC2S.CODEC);
 		PayloadTypeRegistry.playC2S().register(PartyDisbandRequestC2S.ID, PartyDisbandRequestC2S.CODEC);
 		PayloadTypeRegistry.playC2S().register(PartyDisbandConfirmC2S.ID, PartyDisbandConfirmC2S.CODEC);
-		PayloadTypeRegistry.playC2S().register(PartyAllyAddC2S.ID, PartyAllyAddC2S.CODEC);
-		PayloadTypeRegistry.playC2S().register(PartyAllyRemoveC2S.ID, PartyAllyRemoveC2S.CODEC);
 
 		PayloadTypeRegistry.playC2S().register(AdminIslandListRequestC2S.ID, AdminIslandListRequestC2S.CODEC);
 		PayloadTypeRegistry.playS2C().register(AdminIslandListS2C.ID, AdminIslandListS2C.CODEC);
@@ -285,6 +295,11 @@ public final class ClientPacketHandlers {
 		PayloadTypeRegistry.playC2S().register(VanillaResetQueueC2S.ID, VanillaResetQueueC2S.CODEC);
 		PayloadTypeRegistry.playC2S().register(VanillaResetConfirmC2S.ID, VanillaResetConfirmC2S.CODEC);
 		PayloadTypeRegistry.playC2S().register(VanillaResetCancelC2S.ID, VanillaResetCancelC2S.CODEC);
+
+		PayloadTypeRegistry.playC2S().register(LocationSharingStatusRequestC2S.ID, LocationSharingStatusRequestC2S.CODEC);
+		PayloadTypeRegistry.playS2C().register(LocationSharingStatusS2C.ID, LocationSharingStatusS2C.CODEC);
+		PayloadTypeRegistry.playC2S().register(LocationSharingSetC2S.ID, LocationSharingSetC2S.CODEC);
+		PayloadTypeRegistry.playS2C().register(AllyLocationsS2C.ID, AllyLocationsS2C.CODEC);
 	}
 
 	// Admin network block: each S2C handler applies the real data to ClientIslandCache, then
@@ -345,6 +360,28 @@ public final class ClientPacketHandlers {
 			if (MinecraftClient.getInstance().currentScreen instanceof VanillaResetScreen screen) {
 				screen.refreshFromNetwork();
 			}
+		});
+	}
+
+	// AllyLocationsS2C is a periodic push with no requesting screen to rebuild — it only ever
+	// feeds AllyHudRenderer, which reads ClientAllyLocationsCache fresh every frame on its own.
+	// Renamed from registerAllianceHandlers: the island-to-island alliance status handler that used
+	// to live here is gone (AllianceScreen/ClientAllianceCache retired) — location sharing now
+	// refreshes PartyScreen, which hosts the toggles, instead of the old AllianceScreen.
+	private static void registerLocationSharingHandlers() {
+		ClientPlayNetworking.registerGlobalReceiver(LocationSharingStatusS2C.ID, (payload, context) -> {
+			ClientLocationSharingCache.applyStatus(payload);
+			if (MinecraftClient.getInstance().currentScreen instanceof PartyScreen screen) {
+				screen.refreshFromNetwork();
+			}
+		});
+
+		ClientPlayNetworking.registerGlobalReceiver(AllyLocationsS2C.ID, (payload, context) -> {
+			List<ClientAllyLocationView> views = new ArrayList<>();
+			for (AllyLocationsS2C.Entry entry : payload.entries()) {
+				views.add(new ClientAllyLocationView(entry.uuid(), entry.name(), entry.x(), entry.y(), entry.z()));
+			}
+			ClientAllyLocationsCache.applyLocations(views);
 		});
 	}
 }
