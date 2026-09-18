@@ -45,6 +45,11 @@ public class SpawnManagerScreen extends BaseMenuScreen {
 	private static final int FIELD_WIDTH = 80;
 	private static final int FIELD_HEIGHT = 20;
 	private static final int BUTTON_WIDTH = 170;
+	// Sits to the right of the 200px-wide sethome button on the same row — verified against this
+	// project's 427px virtual-width reference (854 real / Auto GUI Scale): row starts at
+	// CONTENT_X(16) + 200 + 8 = 224, this button ends at 224 + 150 = 374, well inside the
+	// width - 8 = 419 right margin at the minimum reference width.
+	private static final int PERMISSIONS_BUTTON_WIDTH = 150;
 
 	private static final int FORM_Y = TOP_BAR_HEIGHT + 8 + LINE_HEIGHT + 8;
 	private static final int HOME_WARNING_Y = FORM_Y + FIELD_HEIGHT + 16;
@@ -129,6 +134,17 @@ public class SpawnManagerScreen extends BaseMenuScreen {
 						Text.translatable("islandcoreclient.admin.spawn.set_home_button"),
 						button -> onSetHomeClicked())
 				.dimensions(CONTENT_X, HOME_BUTTON_Y, 200, FIELD_HEIGHT)
+				.build());
+
+		// Same row as the sethome button, to its right — reuses spare horizontal room on this row
+		// instead of adding a whole new row (this screen's content area is already tight; see the
+		// class javadoc). Permisos/General is its own dedicated screen, not a 3rd tab here, since
+		// SpawnManagerScreen has no room left for a paginated grid on top of everything else it
+		// already shows.
+		this.addDrawableChild(ButtonWidget.builder(
+						Text.translatable("islandcoreclient.admin.spawn.flags_button"),
+						button -> this.client.setScreen(new SpawnFlagsScreen(this)))
+				.dimensions(CONTENT_X + 200 + 8, HOME_BUTTON_Y, PERMISSIONS_BUTTON_WIDTH, FIELD_HEIGHT)
 				.build());
 	}
 

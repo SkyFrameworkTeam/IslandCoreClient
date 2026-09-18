@@ -10,10 +10,14 @@ import java.util.ArrayList;
 import java.util.List;
 
 // Mirrors the server record exactly. The server-wide default configuration for every ROLE_BASED
-// flag and every exception group — not any specific island. Scoped to preset-shaped entries only:
-// the 3 ISLAND_GLOBAL flags have no preset concept and stay command-only server-side (see the
-// server's AdminDefaultsStatusS2C class javadoc), so DefaultConfigScreen never shows them.
-public record AdminDefaultsStatusS2C(List<FlagDefaultEntry> flagDefaults, List<ExceptionDefaultEntry> exceptionDefaults) implements CustomPayload {
+// flag, every exception group, and (Sprint "teletransportes dinámicos" Admin Permisos/General work)
+// every ISLAND_GLOBAL flag — not any specific island.
+//
+// Wire format changed: globalDefaults (list of GlobalDefaultEntry) was added as a 3rd field — a
+// client/server protocol break, see the server's AdminDefaultsStatusS2C class javadoc.
+public record AdminDefaultsStatusS2C(
+		List<FlagDefaultEntry> flagDefaults, List<ExceptionDefaultEntry> exceptionDefaults, List<GlobalDefaultEntry> globalDefaults
+) implements CustomPayload {
 
 	public static final CustomPayload.Id<AdminDefaultsStatusS2C> ID =
 			new CustomPayload.Id<>(Identifier.of("islandcore", "admin_defaults_status_s2c"));
@@ -22,10 +26,13 @@ public record AdminDefaultsStatusS2C(List<FlagDefaultEntry> flagDefaults, List<E
 			PacketCodecs.collection(ArrayList::new, FlagDefaultEntry.CODEC);
 	private static final PacketCodec<RegistryByteBuf, List<ExceptionDefaultEntry>> EXCEPTION_DEFAULT_LIST_CODEC =
 			PacketCodecs.collection(ArrayList::new, ExceptionDefaultEntry.CODEC);
+	private static final PacketCodec<RegistryByteBuf, List<GlobalDefaultEntry>> GLOBAL_DEFAULT_LIST_CODEC =
+			PacketCodecs.collection(ArrayList::new, GlobalDefaultEntry.CODEC);
 
 	public static final PacketCodec<RegistryByteBuf, AdminDefaultsStatusS2C> CODEC = PacketCodec.tuple(
 			FLAG_DEFAULT_LIST_CODEC, AdminDefaultsStatusS2C::flagDefaults,
 			EXCEPTION_DEFAULT_LIST_CODEC, AdminDefaultsStatusS2C::exceptionDefaults,
+			GLOBAL_DEFAULT_LIST_CODEC, AdminDefaultsStatusS2C::globalDefaults,
 			AdminDefaultsStatusS2C::new
 	);
 
@@ -47,6 +54,16 @@ public record AdminDefaultsStatusS2C(List<FlagDefaultEntry> flagDefaults, List<E
 				PacketCodecs.STRING, ExceptionDefaultEntry::groupId,
 				PacketCodecs.STRING, ExceptionDefaultEntry::currentPreset,
 				ExceptionDefaultEntry::new
+		);
+	}
+
+	// currentValue: "allow"/"deny"/"default" — same ClientTriState vocabulary TriStateRow already
+	// cycles through for an island's own ISLAND_GLOBAL override.
+	public record GlobalDefaultEntry(String flagId, String currentValue) {
+		public static final PacketCodec<RegistryByteBuf, GlobalDefaultEntry> CODEC = PacketCodec.tuple(
+				PacketCodecs.STRING, GlobalDefaultEntry::flagId,
+				PacketCodecs.STRING, GlobalDefaultEntry::currentValue,
+				GlobalDefaultEntry::new
 		);
 	}
 }

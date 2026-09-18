@@ -6,6 +6,7 @@ import com.skyframework.islandcoreclient.gui.admin.AdminIslandMembersScreen;
 import com.skyframework.islandcoreclient.gui.admin.DefaultConfigScreen;
 import com.skyframework.islandcoreclient.gui.admin.DimensionManagerScreen;
 import com.skyframework.islandcoreclient.gui.admin.SpawnAuthorizedPlayersScreen;
+import com.skyframework.islandcoreclient.gui.admin.SpawnFlagsScreen;
 import com.skyframework.islandcoreclient.gui.admin.SpawnManagerScreen;
 import com.skyframework.islandcoreclient.gui.admin.VanillaResetScreen;
 import com.skyframework.islandcoreclient.gui.island.BiomeScreen;
@@ -37,6 +38,13 @@ import com.skyframework.islandcoreclient.network.admin.spawn.SpawnAuthorizedPlay
 import com.skyframework.islandcoreclient.network.admin.spawn.SpawnBuildProtectionSetC2S;
 import com.skyframework.islandcoreclient.network.admin.spawn.SpawnBuildProtectionStatusRequestC2S;
 import com.skyframework.islandcoreclient.network.admin.spawn.SpawnBuildProtectionStatusS2C;
+import com.skyframework.islandcoreclient.network.admin.spawn.SpawnExceptionGroupSetPresetC2S;
+import com.skyframework.islandcoreclient.network.admin.spawn.SpawnExceptionGroupsStatusRequestC2S;
+import com.skyframework.islandcoreclient.network.admin.spawn.SpawnExceptionGroupsStatusS2C;
+import com.skyframework.islandcoreclient.network.admin.spawn.SpawnFlagSetC2S;
+import com.skyframework.islandcoreclient.network.admin.spawn.SpawnFlagSetPresetC2S;
+import com.skyframework.islandcoreclient.network.admin.spawn.SpawnFlagsStatusRequestC2S;
+import com.skyframework.islandcoreclient.network.admin.spawn.SpawnFlagsStatusS2C;
 import com.skyframework.islandcoreclient.network.admin.spawn.SpawnIslandCreateC2S;
 import com.skyframework.islandcoreclient.network.admin.spawn.SpawnIslandResizeC2S;
 import com.skyframework.islandcoreclient.network.admin.spawn.SpawnIslandSetHomeC2S;
@@ -45,6 +53,7 @@ import com.skyframework.islandcoreclient.network.admin.defaults.AdminDefaultsSta
 import com.skyframework.islandcoreclient.network.admin.defaults.AdminExceptionSetServerDefaultC2S;
 import com.skyframework.islandcoreclient.network.admin.defaults.AdminFlagSetRequirementC2S;
 import com.skyframework.islandcoreclient.network.admin.defaults.AdminFlagSetServerDefaultC2S;
+import com.skyframework.islandcoreclient.network.admin.defaults.AdminGlobalFlagSetServerDefaultC2S;
 import com.skyframework.islandcoreclient.network.admin.spawn.SpawnStatusRequestC2S;
 import com.skyframework.islandcoreclient.network.admin.spawn.SpawnStatusS2C;
 import com.skyframework.islandcoreclient.network.admin.vanilla.VanillaResetCancelC2S;
@@ -92,6 +101,7 @@ import com.skyframework.islandcoreclient.network.teleport.TeleportRequestC2S;
 import com.skyframework.islandcoreclient.network.teleport.TeleportStatusRequestC2S;
 import com.skyframework.islandcoreclient.network.teleport.TeleportStatusS2C;
 import com.skyframework.islandcoreclient.state.ClientAdminDefaultsCache;
+import com.skyframework.islandcoreclient.state.ClientSpawnFlagsCache;
 import com.skyframework.islandcoreclient.state.ClientAllyLocationView;
 import com.skyframework.islandcoreclient.state.ClientAllyLocationsCache;
 import com.skyframework.islandcoreclient.state.ClientConnectionState;
@@ -250,6 +260,7 @@ public final class ClientPacketHandlers {
 		PayloadTypeRegistry.playC2S().register(AdminDefaultsStatusRequestC2S.ID, AdminDefaultsStatusRequestC2S.CODEC);
 		PayloadTypeRegistry.playS2C().register(AdminDefaultsStatusS2C.ID, AdminDefaultsStatusS2C.CODEC);
 		PayloadTypeRegistry.playC2S().register(AdminFlagSetServerDefaultC2S.ID, AdminFlagSetServerDefaultC2S.CODEC);
+		PayloadTypeRegistry.playC2S().register(AdminGlobalFlagSetServerDefaultC2S.ID, AdminGlobalFlagSetServerDefaultC2S.CODEC);
 		PayloadTypeRegistry.playC2S().register(AdminExceptionSetServerDefaultC2S.ID, AdminExceptionSetServerDefaultC2S.CODEC);
 		PayloadTypeRegistry.playC2S().register(AdminFlagSetRequirementC2S.ID, AdminFlagSetRequirementC2S.CODEC);
 
@@ -281,6 +292,13 @@ public final class ClientPacketHandlers {
 		PayloadTypeRegistry.playC2S().register(SpawnBuildProtectionSetC2S.ID, SpawnBuildProtectionSetC2S.CODEC);
 		PayloadTypeRegistry.playC2S().register(SpawnAuthorizedPlayerAddC2S.ID, SpawnAuthorizedPlayerAddC2S.CODEC);
 		PayloadTypeRegistry.playC2S().register(SpawnAuthorizedPlayerRemoveC2S.ID, SpawnAuthorizedPlayerRemoveC2S.CODEC);
+		PayloadTypeRegistry.playC2S().register(SpawnFlagsStatusRequestC2S.ID, SpawnFlagsStatusRequestC2S.CODEC);
+		PayloadTypeRegistry.playS2C().register(SpawnFlagsStatusS2C.ID, SpawnFlagsStatusS2C.CODEC);
+		PayloadTypeRegistry.playC2S().register(SpawnExceptionGroupsStatusRequestC2S.ID, SpawnExceptionGroupsStatusRequestC2S.CODEC);
+		PayloadTypeRegistry.playS2C().register(SpawnExceptionGroupsStatusS2C.ID, SpawnExceptionGroupsStatusS2C.CODEC);
+		PayloadTypeRegistry.playC2S().register(SpawnFlagSetC2S.ID, SpawnFlagSetC2S.CODEC);
+		PayloadTypeRegistry.playC2S().register(SpawnFlagSetPresetC2S.ID, SpawnFlagSetPresetC2S.CODEC);
+		PayloadTypeRegistry.playC2S().register(SpawnExceptionGroupSetPresetC2S.ID, SpawnExceptionGroupSetPresetC2S.CODEC);
 
 		PayloadTypeRegistry.playC2S().register(DimensionListRequestC2S.ID, DimensionListRequestC2S.CODEC);
 		PayloadTypeRegistry.playS2C().register(DimensionListS2C.ID, DimensionListS2C.CODEC);
@@ -339,6 +357,20 @@ public final class ClientPacketHandlers {
 			if (currentScreen instanceof SpawnManagerScreen screen) {
 				screen.refreshFromNetwork();
 			} else if (currentScreen instanceof SpawnAuthorizedPlayersScreen screen) {
+				screen.refreshFromNetwork();
+			}
+		});
+
+		ClientPlayNetworking.registerGlobalReceiver(SpawnFlagsStatusS2C.ID, (payload, context) -> {
+			ClientSpawnFlagsCache.applyFlagsStatus(payload);
+			if (MinecraftClient.getInstance().currentScreen instanceof SpawnFlagsScreen screen) {
+				screen.refreshFromNetwork();
+			}
+		});
+
+		ClientPlayNetworking.registerGlobalReceiver(SpawnExceptionGroupsStatusS2C.ID, (payload, context) -> {
+			ClientSpawnFlagsCache.applyExceptionGroupsStatus(payload);
+			if (MinecraftClient.getInstance().currentScreen instanceof SpawnFlagsScreen screen) {
 				screen.refreshFromNetwork();
 			}
 		});

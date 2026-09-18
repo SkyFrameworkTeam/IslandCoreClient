@@ -6,19 +6,21 @@ import com.skyframework.islandcoreclient.gui.common.PagedFlagGrid;
 import com.skyframework.islandcoreclient.gui.common.TriStateRow;
 import com.skyframework.islandcoreclient.network.ClientErrorToasts;
 import com.skyframework.islandcoreclient.network.PendingActionTracker;
-import com.skyframework.islandcoreclient.network.admin.defaults.AdminDefaultsStatusRequestC2S;
-import com.skyframework.islandcoreclient.network.admin.defaults.AdminExceptionSetServerDefaultC2S;
-import com.skyframework.islandcoreclient.network.admin.defaults.AdminFlagSetServerDefaultC2S;
-import com.skyframework.islandcoreclient.network.admin.defaults.AdminGlobalFlagSetServerDefaultC2S;
-import com.skyframework.islandcoreclient.state.ClientAdminDefaultsCache;
+import com.skyframework.islandcoreclient.network.admin.spawn.SpawnExceptionGroupSetPresetC2S;
+import com.skyframework.islandcoreclient.network.admin.spawn.SpawnExceptionGroupsStatusRequestC2S;
+import com.skyframework.islandcoreclient.network.admin.spawn.SpawnFlagSetC2S;
+import com.skyframework.islandcoreclient.network.admin.spawn.SpawnFlagSetPresetC2S;
+import com.skyframework.islandcoreclient.network.admin.spawn.SpawnFlagsStatusRequestC2S;
 import com.skyframework.islandcoreclient.state.ClientExceptionGroupView;
 import com.skyframework.islandcoreclient.state.ClientFlagView;
+import com.skyframework.islandcoreclient.state.ClientSpawnFlagsCache;
 import com.skyframework.islandcoreclient.state.ClientTriState;
 
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
+import net.minecraft.client.gui.tooltip.Tooltip;
 import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
@@ -28,17 +30,20 @@ import java.util.Locale;
 import java.util.Optional;
 
 /**
- * Server-wide default configuration — not any specific island's, the "servidor" layer
- * AdminDefaultsStatusS2C reports. Operator-only, reached from the admin gateway in DashboardScreen.
+ * Spawn's own "Permisos"/"General" configuration — treated as a normal island's flags/exceptions
+ * for this purpose (B.2 of the "teletransportes dinámicos" sprint), reached from SpawnManagerScreen
+ * (its own content is already dense — see that screen's class javadoc — so this lives on its own
+ * page instead of adding a 3rd tab there, same "split into a dedicated screen" pattern
+ * AdminIslandDetailScreen→AdminIslandMembersScreen already established).
  *
- * <p>Same "General"/"Permisos" two-tab split as SettingsScreen (General first, same order fixed
- * there), driven by {@link ClientAdminDefaultsCache} instead of an island's own flags/exceptions:
- * "Permisos" is the {@link PagedFlagGrid} + {@link FlagPresetRow} grid of every ROLE_BASED flag
- * preset and every exception group preset (unchanged from before this tab split existed); "General"
- * is the 3 ISLAND_GLOBAL flags, unpaginated, with {@link TriStateRow} — same component split
- * SettingsScreen already uses, just against the server-wide default instead of an island's own.
+ * <p>Exact same tab split/component reuse as SettingsScreen and DefaultConfigScreen (General
+ * first, same order fixed there): "Permisos" is {@link PagedFlagGrid} + {@link FlagPresetRow} for
+ * every ROLE_BASED flag preset and every exception group preset; "General" is the 3 ISLAND_GLOBAL
+ * flags, unpaginated, with {@link TriStateRow} — driven by {@link ClientSpawnFlagsCache} (a
+ * separate cache from ClientIslandCache's own, so this never collides with the acting admin's own
+ * island flags if they have one).
  */
-public class DefaultConfigScreen extends BaseMenuScreen {
+public class SpawnFlagsScreen extends BaseMenuScreen {
 	private enum Tab {
 		GENERAL, PERMISSIONS
 	}
@@ -62,13 +67,14 @@ public class DefaultConfigScreen extends BaseMenuScreen {
 	private Tab activeTab = Tab.PERMISSIONS;
 	private final PagedFlagGrid grid = new PagedFlagGrid(0, CONTENT_TOP, 1, 1, ROW_HEIGHT, ROW_SPACING, GRID_COLUMN_GAP);
 
-	public DefaultConfigScreen(Screen parent) {
-		super(Text.translatable("islandcoreclient.admin.default_config.title"), parent);
-		ClientPlayNetworking.send(new AdminDefaultsStatusRequestC2S());
+	public SpawnFlagsScreen(Screen parent) {
+		super(Text.translatable("islandcoreclient.admin.spawn.flags_title"), parent);
+		ClientPlayNetworking.send(new SpawnFlagsStatusRequestC2S());
+		ClientPlayNetworking.send(new SpawnExceptionGroupsStatusRequestC2S());
 	}
 
-	// Called by ClientPacketHandlers when a fresh AdminDefaultsStatusS2C lands while this screen is
-	// open — same pattern as every other status-driven screen.
+	// Called by ClientPacketHandlers when a fresh SpawnFlagsStatusS2C/SpawnExceptionGroupsStatusS2C
+	// lands while this screen is open — same pattern as every other status-driven screen.
 	public void refreshFromNetwork() {
 		this.clearAndInit();
 	}
@@ -92,7 +98,6 @@ public class DefaultConfigScreen extends BaseMenuScreen {
 		ButtonWidget button = this.addDrawableChild(ButtonWidget.builder(message, b -> onTabClicked(tab))
 				.dimensions(x, TAB_BAR_Y, TAB_BUTTON_WIDTH, TAB_BUTTON_HEIGHT)
 				.build());
-		// The active tab's own button is inert (you're already on it) — only the other one navigates.
 		button.active = !isActiveTab;
 	}
 
@@ -104,9 +109,10 @@ public class DefaultConfigScreen extends BaseMenuScreen {
 	private void initGeneralTab() {
 		int x = this.width / 2 - ROW_WIDTH / 2;
 		int y = CONTENT_TOP;
-		for (ClientAdminDefaultsCache.GlobalDefaultView entry : ClientAdminDefaultsCache.getGlobalDefaults()) {
-			TriStateRow row = new TriStateRow(x, y, ROW_WIDTH, ROW_HEIGHT, ClientFlagView.labelFor(entry.flagId()),
-					entry.currentValue(), true, newValue -> onGlobalDefaultChanged(entry.flagId(), newValue));
+		for (ClientFlagView flag : globalFlags()) {
+			TriStateRow row = new TriStateRow(x, y, ROW_WIDTH, ROW_HEIGHT, flag.label(), flag.islandOverride(), true,
+					newValue -> onFlagOverrideChanged(flag.flagId(), newValue));
+			row.setTooltip(Tooltip.of(flag.description()));
 			this.addDrawableChild(row);
 			y += ROW_HEIGHT + ROW_SPACING;
 		}
@@ -119,31 +125,31 @@ public class DefaultConfigScreen extends BaseMenuScreen {
 				this.height - CONTENT_BOTTOM_MARGIN - PAGINATION_ROW_HEIGHT - PAGINATION_GAP - CONTENT_TOP);
 		grid.setViewport(gridX, CONTENT_TOP, gridWidth, gridViewportHeight);
 
-		List<ClientAdminDefaultsCache.FlagDefaultView> flagDefaults = ClientAdminDefaultsCache.getFlagDefaults();
-		List<ClientAdminDefaultsCache.ExceptionDefaultView> exceptionDefaults = ClientAdminDefaultsCache.getExceptionDefaults();
-		grid.setItemCount(flagDefaults.size() + exceptionDefaults.size());
+		List<ClientFlagView> roleFlags = roleBasedFlags();
+		List<ClientExceptionGroupView> groups = ClientSpawnFlagsCache.getExceptionGroups();
+		grid.setItemCount(roleFlags.size() + groups.size());
 
-		for (int i = 0; i < flagDefaults.size(); i++) {
+		for (int i = 0; i < roleFlags.size(); i++) {
 			if (!grid.isItemOnCurrentPage(i)) {
 				continue;
 			}
-			ClientAdminDefaultsCache.FlagDefaultView entry = flagDefaults.get(i);
+			ClientFlagView flag = roleFlags.get(i);
 			FlagPresetRow row = new FlagPresetRow(grid.getItemX(i), grid.getItemY(i), grid.getItemWidth(), ROW_HEIGHT,
-					ClientFlagView.labelFor(entry.flagId()), entry.currentPreset(), true,
-					preset -> onFlagDefaultChanged(entry.flagId(), preset));
+					flag.label(), flag.currentPreset(), true, preset -> onFlagPresetChanged(flag.flagId(), preset));
+			row.setTooltip(Tooltip.of(flag.description()));
 			this.addDrawableChild(row);
 		}
 
-		int groupsOffset = flagDefaults.size();
-		for (int j = 0; j < exceptionDefaults.size(); j++) {
+		int groupsOffset = roleFlags.size();
+		for (int j = 0; j < groups.size(); j++) {
 			int i = groupsOffset + j;
 			if (!grid.isItemOnCurrentPage(i)) {
 				continue;
 			}
-			ClientAdminDefaultsCache.ExceptionDefaultView entry = exceptionDefaults.get(j);
+			ClientExceptionGroupView group = groups.get(j);
 			FlagPresetRow row = new FlagPresetRow(grid.getItemX(i), grid.getItemY(i), grid.getItemWidth(), ROW_HEIGHT,
-					ClientExceptionGroupView.labelFor(entry.groupId()), entry.currentPreset(), true,
-					preset -> onExceptionDefaultChanged(entry.groupId(), preset));
+					group.label(), group.currentPreset(), true, preset -> onExceptionPresetChanged(group.groupId(), preset));
+			row.setTooltip(Tooltip.of(group.description()));
 			this.addDrawableChild(row);
 		}
 
@@ -182,64 +188,62 @@ public class DefaultConfigScreen extends BaseMenuScreen {
 				paginationRowY() + (PAGINATION_ROW_HEIGHT - this.textRenderer.fontHeight) / 2, 0xAAAAAA);
 	}
 
-	// TriStateRow already cycled itself optimistically before this runs — same optimistic-then-
-	// refetch-on-failure pattern SettingsScreen#onFlagOverrideChanged uses for an island's own
-	// ISLAND_GLOBAL override, just against the server-wide default instead.
-	private void onGlobalDefaultChanged(String flagId, ClientTriState newValue) {
-		ClientTriState previous = findGlobalDefault(flagId).map(ClientAdminDefaultsCache.GlobalDefaultView::currentValue).orElse(ClientTriState.DEFAULT);
-		ClientAdminDefaultsCache.updateGlobalDefaultValue(flagId, newValue);
-		ClientPlayNetworking.send(new AdminGlobalFlagSetServerDefaultC2S(flagId, newValue.name().toLowerCase(Locale.ROOT)));
+	private void onFlagOverrideChanged(String flagId, ClientTriState newValue) {
+		ClientTriState previous = findFlag(flagId).map(ClientFlagView::islandOverride).orElse(ClientTriState.DEFAULT);
+		ClientSpawnFlagsCache.updateFlagOverride(flagId, newValue);
+		ClientPlayNetworking.send(new SpawnFlagSetC2S(flagId, newValue.name().toLowerCase(Locale.ROOT)));
 		PendingActionTracker.await((success, reasonKey) -> {
 			if (!success) {
-				ClientAdminDefaultsCache.updateGlobalDefaultValue(flagId, previous);
+				ClientSpawnFlagsCache.updateFlagOverride(flagId, previous);
 				ClientErrorToasts.showReason(reasonKey);
 				this.clearAndInit();
 			}
 		});
 	}
 
-	// FlagPresetRow already switched itself optimistically before this runs — same
-	// optimistic-then-refetch pattern SettingsScreen#onFlagPresetChanged uses for an island's own
-	// flags, just against the server-wide default instead.
-	private void onFlagDefaultChanged(String flagId, String preset) {
-		String previous = findFlagDefault(flagId).map(ClientAdminDefaultsCache.FlagDefaultView::currentPreset).orElse("custom");
-		ClientAdminDefaultsCache.updateFlagDefaultPreset(flagId, preset);
-		ClientPlayNetworking.send(new AdminFlagSetServerDefaultC2S(flagId, preset));
+	private void onFlagPresetChanged(String flagId, String preset) {
+		String previous = findFlag(flagId).map(ClientFlagView::currentPreset).orElse("custom");
+		ClientSpawnFlagsCache.updateFlagPreset(flagId, preset);
+		ClientPlayNetworking.send(new SpawnFlagSetPresetC2S(flagId, preset));
 		PendingActionTracker.await((success, reasonKey) -> {
 			if (success) {
-				ClientPlayNetworking.send(new AdminDefaultsStatusRequestC2S());
+				ClientPlayNetworking.send(new SpawnFlagsStatusRequestC2S());
 			} else {
-				ClientAdminDefaultsCache.updateFlagDefaultPreset(flagId, previous);
+				ClientSpawnFlagsCache.updateFlagPreset(flagId, previous);
 				ClientErrorToasts.showReason(reasonKey);
 				this.clearAndInit();
 			}
 		});
 	}
 
-	private void onExceptionDefaultChanged(String groupId, String preset) {
-		String previous = findExceptionDefault(groupId).map(ClientAdminDefaultsCache.ExceptionDefaultView::currentPreset).orElse("custom");
-		ClientAdminDefaultsCache.updateExceptionDefaultPreset(groupId, preset);
-		ClientPlayNetworking.send(new AdminExceptionSetServerDefaultC2S(groupId, preset));
+	private void onExceptionPresetChanged(String groupId, String preset) {
+		String previous = findExceptionGroup(groupId).map(ClientExceptionGroupView::currentPreset).orElse("custom");
+		ClientSpawnFlagsCache.updateExceptionGroupPreset(groupId, preset);
+		ClientPlayNetworking.send(new SpawnExceptionGroupSetPresetC2S(groupId, preset));
 		PendingActionTracker.await((success, reasonKey) -> {
 			if (success) {
-				ClientPlayNetworking.send(new AdminDefaultsStatusRequestC2S());
+				ClientPlayNetworking.send(new SpawnExceptionGroupsStatusRequestC2S());
 			} else {
-				ClientAdminDefaultsCache.updateExceptionDefaultPreset(groupId, previous);
+				ClientSpawnFlagsCache.updateExceptionGroupPreset(groupId, previous);
 				ClientErrorToasts.showReason(reasonKey);
 				this.clearAndInit();
 			}
 		});
 	}
 
-	private static Optional<ClientAdminDefaultsCache.GlobalDefaultView> findGlobalDefault(String flagId) {
-		return ClientAdminDefaultsCache.getGlobalDefaults().stream().filter(entry -> entry.flagId().equals(flagId)).findFirst();
+	private static List<ClientFlagView> roleBasedFlags() {
+		return ClientSpawnFlagsCache.getFlags().stream().filter(flag -> flag.category() == ClientFlagView.Category.ROLE_BASED).toList();
 	}
 
-	private static Optional<ClientAdminDefaultsCache.FlagDefaultView> findFlagDefault(String flagId) {
-		return ClientAdminDefaultsCache.getFlagDefaults().stream().filter(entry -> entry.flagId().equals(flagId)).findFirst();
+	private static List<ClientFlagView> globalFlags() {
+		return ClientSpawnFlagsCache.getFlags().stream().filter(flag -> flag.category() == ClientFlagView.Category.ISLAND_GLOBAL).toList();
 	}
 
-	private static Optional<ClientAdminDefaultsCache.ExceptionDefaultView> findExceptionDefault(String groupId) {
-		return ClientAdminDefaultsCache.getExceptionDefaults().stream().filter(entry -> entry.groupId().equals(groupId)).findFirst();
+	private static Optional<ClientFlagView> findFlag(String flagId) {
+		return ClientSpawnFlagsCache.getFlags().stream().filter(flag -> flag.flagId().equals(flagId)).findFirst();
+	}
+
+	private static Optional<ClientExceptionGroupView> findExceptionGroup(String groupId) {
+		return ClientSpawnFlagsCache.getExceptionGroups().stream().filter(group -> group.groupId().equals(groupId)).findFirst();
 	}
 }
