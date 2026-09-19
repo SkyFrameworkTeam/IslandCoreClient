@@ -1,6 +1,7 @@
 package com.skyframework.islandcoreclient.gui.admin;
 
 import com.skyframework.islandcoreclient.gui.common.BaseMenuScreen;
+import com.skyframework.islandcoreclient.gui.common.PagedFlagGrid;
 import com.skyframework.islandcoreclient.gui.common.ToggleRow;
 import com.skyframework.islandcoreclient.network.ClientErrorToasts;
 import com.skyframework.islandcoreclient.network.PendingActionTracker;
@@ -25,6 +26,7 @@ import net.minecraft.client.gui.widget.TextFieldWidget;
 import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
 
+import java.util.List;
 import java.util.Optional;
 
 import org.jetbrains.annotations.Nullable;
@@ -56,6 +58,18 @@ public class DimensionManagerScreen extends BaseMenuScreen {
 	private static final int SUB_BACK_Y = TOP_BAR_HEIGHT + 6;
 	private static final int TOP_BAR_ACTION_WIDTH = 90;
 	private static final int TOP_BAR_ACTION_HEIGHT = 20;
+
+	// Paginated list (Mode.LIST only) — same PagedFlagGrid + prev/next + page-indicator pattern
+	// TeleportsScreen already uses for its own dynamic-dimensions section, so creating many
+	// dimensions no longer pushes buttons below the screen's edge.
+	private static final int GRID_MAX_WIDTH = 480;
+	private static final int GRID_COLUMN_GAP = 24;
+	private static final int PAGINATION_ROW_HEIGHT = 20;
+	private static final int PAGINATION_GAP = 8;
+	private static final int PAGINATION_BUTTON_WIDTH = 90;
+	private static final int CONTENT_BOTTOM_MARGIN = 12;
+
+	private final PagedFlagGrid listGrid = new PagedFlagGrid(0, LIST_START_Y, 1, 1, ROW_HEIGHT, ROW_GAP, GRID_COLUMN_GAP);
 
 	private Mode mode = Mode.LIST;
 	@Nullable
@@ -94,21 +108,9 @@ public class DimensionManagerScreen extends BaseMenuScreen {
 	}
 
 	private void initListContent() {
-		int y = LIST_START_Y;
-		for (ClientDimensionView dimension : ClientIslandCache.getDimensions()) {
-			this.addDrawableChild(ButtonWidget.builder(
-							Text.literal(dimension.displayName() + " (" + dimension.id() + ")"),
-							button -> {
-								this.selectedDimensionId = dimension.id();
-								this.mode = Mode.DETAIL;
-								ClientPlayNetworking.send(new DimensionDetailRequestC2S(dimension.path()));
-								this.clearAndInit();
-							})
-					.dimensions(CONTENT_X, y, 360, ROW_HEIGHT)
-					.build());
-			y += ROW_HEIGHT + ROW_GAP;
-		}
-
+		// Top bar's free right-hand slot — same slot/height initCreateContent's own confirm button
+		// uses, freeing the whole content area for the paginated grid below instead of competing
+		// with it for vertical room.
 		this.addDrawableChild(ButtonWidget.builder(
 						Text.translatable("islandcoreclient.admin.dimension_manager.create_button"),
 						button -> {
@@ -116,8 +118,63 @@ public class DimensionManagerScreen extends BaseMenuScreen {
 							this.mode = Mode.CREATE;
 							this.clearAndInit();
 						})
-				.dimensions(CONTENT_X, y + 8, 220, ROW_HEIGHT)
+				.dimensions(this.width - 8 - TOP_BAR_ACTION_WIDTH, (TOP_BAR_HEIGHT - TOP_BAR_ACTION_HEIGHT) / 2,
+						TOP_BAR_ACTION_WIDTH, TOP_BAR_ACTION_HEIGHT)
 				.build());
+
+		List<ClientDimensionView> dimensions = ClientIslandCache.getDimensions();
+
+		int gridWidth = Math.min(GRID_MAX_WIDTH, this.width - 32);
+		int gridX = this.width / 2 - gridWidth / 2;
+		int gridViewportHeight = Math.max(ROW_HEIGHT,
+				this.height - CONTENT_BOTTOM_MARGIN - PAGINATION_ROW_HEIGHT - PAGINATION_GAP - LIST_START_Y);
+		listGrid.setViewport(gridX, LIST_START_Y, gridWidth, gridViewportHeight);
+		listGrid.setItemCount(dimensions.size());
+
+		for (int i = 0; i < dimensions.size(); i++) {
+			if (!listGrid.isItemOnCurrentPage(i)) {
+				continue;
+			}
+			ClientDimensionView dimension = dimensions.get(i);
+			// Name colored per style (VOID_FLAT black / NETHER_LIKE red / OVERWORLD_LIKE green /
+			// END_LIKE purple — same 4-color convention ClientResetDimension already uses for
+			// vanilla Overworld/Nether/End), the "(id)" suffix left plain.
+			Text rowLabel = Text.literal(dimension.displayName()).formatted(dimension.style().color())
+					.append(Text.literal(" (" + dimension.id() + ")"));
+			this.addDrawableChild(ButtonWidget.builder(
+							rowLabel,
+							button -> {
+								this.selectedDimensionId = dimension.id();
+								this.mode = Mode.DETAIL;
+								ClientPlayNetworking.send(new DimensionDetailRequestC2S(dimension.path()));
+								this.clearAndInit();
+							})
+					.dimensions(listGrid.getItemX(i), listGrid.getItemY(i), listGrid.getItemWidth(), ROW_HEIGHT)
+					.build());
+		}
+
+		int paginationY = listPaginationRowY();
+		ButtonWidget prevButton = this.addDrawableChild(ButtonWidget.builder(Text.translatable("islandcoreclient.pagination.prev"),
+						b -> {
+							listGrid.prevPage();
+							this.clearAndInit();
+						})
+				.dimensions(gridX, paginationY, PAGINATION_BUTTON_WIDTH, PAGINATION_ROW_HEIGHT)
+				.build());
+		prevButton.active = listGrid.hasPrevPage();
+
+		ButtonWidget nextButton = this.addDrawableChild(ButtonWidget.builder(Text.translatable("islandcoreclient.pagination.next"),
+						b -> {
+							listGrid.nextPage();
+							this.clearAndInit();
+						})
+				.dimensions(gridX + gridWidth - PAGINATION_BUTTON_WIDTH, paginationY, PAGINATION_BUTTON_WIDTH, PAGINATION_ROW_HEIGHT)
+				.build());
+		nextButton.active = listGrid.hasNextPage();
+	}
+
+	private int listPaginationRowY() {
+		return this.height - CONTENT_BOTTOM_MARGIN - PAGINATION_ROW_HEIGHT;
 	}
 
 	private void addBackToListButton() {
@@ -249,7 +306,13 @@ public class DimensionManagerScreen extends BaseMenuScreen {
 		if (ClientIslandCache.getDimensions().isEmpty()) {
 			context.drawTextWithShadow(this.textRenderer,
 					Text.translatable("islandcoreclient.admin.dimension_manager.empty"), CONTENT_X, LIST_START_Y, 0xAAAAAA);
+			return;
 		}
+
+		Text indicator = Text.translatable("islandcoreclient.pagination.page_indicator", listGrid.getCurrentPage() + 1, listGrid.totalPages());
+		int textWidth = this.textRenderer.getWidth(indicator);
+		context.drawTextWithShadow(this.textRenderer, indicator, this.width / 2 - textWidth / 2,
+				listPaginationRowY() + (PAGINATION_ROW_HEIGHT - this.textRenderer.fontHeight) / 2, 0xAAAAAA);
 	}
 
 	private void renderDetailContent(DrawContext context) {

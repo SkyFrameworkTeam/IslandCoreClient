@@ -188,6 +188,7 @@
 	"islandcoreclient.reason.rtp_disabled": "Random teleport is disabled on this server",
 	"islandcoreclient.reason.rtp_dimension_not_allowed": "You can't use random teleport in this dimension",
 	"islandcoreclient.reason.rtp_no_safe_location": "Couldn't find a safe location. Try again",
+	"islandcoreclient.reason.dimension_no_safe_location": "Couldn't find any safe location to teleport you to",
 
 	"islandcoreclient.reason.flag_not_found": "Unknown flag",
 	"islandcoreclient.reason.invalid_flag_value": "Invalid value — use allow, deny or default",

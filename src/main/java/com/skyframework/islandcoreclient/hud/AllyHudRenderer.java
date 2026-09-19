@@ -29,8 +29,9 @@ import java.util.List;
  */
 public final class AllyHudRenderer {
 	private static final double HIDE_DISTANCE_BLOCKS = 15.0;
-	// Halved from the original 16 — the head-sized icon read as too prominent/intrusive on the HUD.
-	private static final int ICON_SIZE = 8;
+	// Halved from 16 to 8, then halved again to 4 — still read as too large/intrusive on the HUD
+	// at 8px per in-game feedback.
+	private static final int ICON_SIZE = 4;
 	private static final int EDGE_MARGIN = 20;
 	private static final int LABEL_GAP = 2;
 

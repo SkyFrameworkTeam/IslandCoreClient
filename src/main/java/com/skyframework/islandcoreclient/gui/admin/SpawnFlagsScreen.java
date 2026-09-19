@@ -64,7 +64,7 @@ public class SpawnFlagsScreen extends BaseMenuScreen {
 	private static final int PAGINATION_GAP = 8;
 	private static final int PAGINATION_BUTTON_WIDTH = 90;
 
-	private Tab activeTab = Tab.PERMISSIONS;
+	private Tab activeTab = Tab.GENERAL;
 	private final PagedFlagGrid grid = new PagedFlagGrid(0, CONTENT_TOP, 1, 1, ROW_HEIGHT, ROW_SPACING, GRID_COLUMN_GAP);
 
 	public SpawnFlagsScreen(Screen parent) {

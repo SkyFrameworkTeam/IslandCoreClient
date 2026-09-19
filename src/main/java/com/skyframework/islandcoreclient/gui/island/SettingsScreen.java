@@ -83,8 +83,8 @@ public class SettingsScreen extends BaseMenuScreen {
 	protected void initContent() {
 		int tabsWidth = 2 * TAB_BUTTON_WIDTH + TAB_BUTTON_GAP;
 		int tabsX = this.width / 2 - tabsWidth / 2;
-		addTabButton(tabsX, Tab.PERMISSIONS, Text.translatable("islandcoreclient.settings.tab_permissions"));
-		addTabButton(tabsX + (TAB_BUTTON_WIDTH + TAB_BUTTON_GAP), Tab.GENERAL, Text.translatable("islandcoreclient.settings.tab_general"));
+		addTabButton(tabsX, Tab.GENERAL, Text.translatable("islandcoreclient.settings.tab_general"));
+		addTabButton(tabsX + (TAB_BUTTON_WIDTH + TAB_BUTTON_GAP), Tab.PERMISSIONS, Text.translatable("islandcoreclient.settings.tab_permissions"));
 
 		switch (activeTab) {
 			case PERMISSIONS -> initPermissionsTab();

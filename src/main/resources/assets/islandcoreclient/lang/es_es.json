@@ -188,6 +188,7 @@
 	"islandcoreclient.reason.rtp_disabled": "El teletransporte aleatorio está desactivado en este servidor",
 	"islandcoreclient.reason.rtp_dimension_not_allowed": "No puedes usar el teletransporte aleatorio en esta dimensión",
 	"islandcoreclient.reason.rtp_no_safe_location": "No se ha podido encontrar un lugar seguro. Inténtalo de nuevo",
+	"islandcoreclient.reason.dimension_no_safe_location": "No se ha podido encontrar ningún lugar seguro donde teletransportarte",
 
 	"islandcoreclient.reason.flag_not_found": "Flag desconocido",
 	"islandcoreclient.reason.invalid_flag_value": "Valor inválido — usa allow, deny o default",

@@ -90,12 +90,25 @@ public class BiomeScreen extends BaseMenuScreen {
 				int x = CONTENT_X + col * (buttonWidth + BIOME_BUTTON_GAP);
 				int buttonY = y + row * (BIOME_BUTTON_HEIGHT + BIOME_BUTTON_GAP);
 
-				ButtonWidget.Builder builder = ButtonWidget.builder(label, button -> onBiomeClicked(biome))
-						.dimensions(x, buttonY, buttonWidth, BIOME_BUTTON_HEIGHT);
-				if (tier.permissionLabel() != null) {
-					builder = builder.tooltip(Tooltip.of(tier.permissionLabel()));
+				ButtonWidget button;
+				if (isCurrent) {
+					// Bold + underlined, on top of the permanently-"pressed" look below — the check
+					// prefix alone read as too subtle to spot at a glance among a full grid of buttons.
+					Text selectedLabel = label.copy().formatted(Formatting.BOLD, Formatting.UNDERLINE);
+					button = new SelectedBiomeButton(x, buttonY, buttonWidth, BIOME_BUTTON_HEIGHT, selectedLabel,
+							b -> onBiomeClicked(biome));
+					if (tier.permissionLabel() != null) {
+						button.setTooltip(Tooltip.of(tier.permissionLabel()));
+					}
+					this.addDrawableChild(button);
+				} else {
+					ButtonWidget.Builder builder = ButtonWidget.builder(label, b -> onBiomeClicked(biome))
+							.dimensions(x, buttonY, buttonWidth, BIOME_BUTTON_HEIGHT);
+					if (tier.permissionLabel() != null) {
+						builder = builder.tooltip(Tooltip.of(tier.permissionLabel()));
+					}
+					button = this.addDrawableChild(builder.build());
 				}
-				ButtonWidget button = this.addDrawableChild(builder.build());
 				button.active = tier.unlocked() && !cooldownActive;
 			}
 
@@ -177,6 +190,21 @@ public class BiomeScreen extends BaseMenuScreen {
 			}
 			this.clearAndInit();
 		});
+	}
+
+	// Renders permanently in vanilla's own "highlighted/pressed" button texture — the same
+	// widget_highlighted look ButtonWidget already uses on hover (PressableWidget#renderWidget
+	// keys it off isSelected()) — repurposed here as a standing "this one is active" marker for
+	// the current biome, instead of inventing a new visual not already used elsewhere.
+	private static final class SelectedBiomeButton extends ButtonWidget {
+		private SelectedBiomeButton(int x, int y, int width, int height, Text message, PressAction onPress) {
+			super(x, y, width, height, message, onPress, DEFAULT_NARRATION_SUPPLIER);
+		}
+
+		@Override
+		public boolean isSelected() {
+			return true;
+		}
 	}
 
 	private static String formatCooldown(long totalSeconds) {
