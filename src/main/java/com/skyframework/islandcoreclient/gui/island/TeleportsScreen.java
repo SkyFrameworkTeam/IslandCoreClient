@@ -100,6 +100,18 @@ public class TeleportsScreen extends BaseMenuScreen {
 			y += ROW_GAP;
 		}
 
+		// Fixed row for the real vanilla Overworld, alongside Home/Spawn/RTP — deliberately NOT a
+		// ClientTeleportType entry: that enum drives label/cooldown state fed by TeleportStatusS2C,
+		// which only knows about Home/Spawn/RTP; the Overworld has no cooldown/enabled concept of its
+		// own, so this is just a plain always-active button sending Type.OVERWORLD directly.
+		ButtonWidget overworldButton = this.addDrawableChild(ButtonWidget.builder(
+						Text.translatable("islandcoreclient.teleports.teleport_button"),
+						b -> sendTeleportRequest(TeleportRequestC2S.fixed(TeleportRequestC2S.Type.OVERWORLD)))
+				.dimensions(buttonX, y, BUTTON_WIDTH, ROW_HEIGHT)
+				.build());
+		overworldButton.active = true;
+		y += ROW_HEIGHT + ROW_GAP;
+
 		initDimensionSection(y + SECTION_GAP);
 	}
 
@@ -188,6 +200,9 @@ public class TeleportsScreen extends BaseMenuScreen {
 			}
 			y += ROW_GAP;
 		}
+
+		context.drawTextWithShadow(this.textRenderer, Text.translatable("islandcoreclient.teleports.type.overworld"),
+				CONTENT_X, y + (ROW_HEIGHT - this.textRenderer.fontHeight) / 2, 0xFFFFFF);
 
 		Text indicator = Text.translatable("islandcoreclient.pagination.page_indicator",
 				dimensionGrid.getCurrentPage() + 1, dimensionGrid.totalPages());

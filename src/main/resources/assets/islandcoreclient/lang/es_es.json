@@ -83,7 +83,7 @@
 	"islandcoreclient.exceptions.group.cakes.description": "Si está activado, cualquiera puede comer pasteles en tu isla, aunque no tenga permiso.",
 
 	"islandcoreclient.dashboard.settings_button": "Ajustes",
-	"islandcoreclient.dashboard.members_button": "Miembros",
+	"islandcoreclient.dashboard.party_button": "Party",
 	"islandcoreclient.dashboard.biome_button": "Bioma",
 	"islandcoreclient.dashboard.limits_button": "Límites",
 	"islandcoreclient.dashboard.teleports_button": "Teletransportes",
@@ -157,6 +157,7 @@
 	"islandcoreclient.teleports.type.home": "Home",
 	"islandcoreclient.teleports.type.spawn": "Spawn",
 	"islandcoreclient.teleports.type.rtp": "RTP",
+	"islandcoreclient.teleports.type.overworld": "Overworld",
 	"islandcoreclient.teleports.type.farming": "Farming",
 
 	"islandcoreclient.error.toast_title": "Acción fallida",

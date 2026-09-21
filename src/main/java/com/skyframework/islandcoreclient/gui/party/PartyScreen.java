@@ -5,13 +5,18 @@ import java.util.List;
 import java.util.UUID;
 
 import com.skyframework.islandcoreclient.gui.common.BaseMenuScreen;
+import com.skyframework.islandcoreclient.gui.common.ScrollableRowList;
 import com.skyframework.islandcoreclient.gui.common.ToggleRow;
+import com.skyframework.islandcoreclient.gui.island.PendingInvitesScreen;
 import com.skyframework.islandcoreclient.network.ClientErrorToasts;
 import com.skyframework.islandcoreclient.network.PendingActionTracker;
 import com.skyframework.islandcoreclient.network.alliance.LocationSharingSetC2S;
 import com.skyframework.islandcoreclient.network.alliance.LocationSharingStatusRequestC2S;
 import com.skyframework.islandcoreclient.network.island.IslandSnapshotRequestC2S;
 import com.skyframework.islandcoreclient.network.member.MemberAllyAddC2S;
+import com.skyframework.islandcoreclient.network.member.MemberInviteC2S;
+import com.skyframework.islandcoreclient.network.member.MemberRemoveC2S;
+import com.skyframework.islandcoreclient.network.member.MemberTrustC2S;
 import com.skyframework.islandcoreclient.network.party.PartyAcceptC2S;
 import com.skyframework.islandcoreclient.network.party.PartyCreateC2S;
 import com.skyframework.islandcoreclient.network.party.PartyDisbandConfirmC2S;
@@ -34,6 +39,7 @@ import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.widget.ButtonWidget;
+import net.minecraft.client.gui.widget.ClickableWidget;
 import net.minecraft.client.gui.widget.TextFieldWidget;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.text.Text;
@@ -42,20 +48,20 @@ import net.minecraft.util.Formatting;
 import org.jetbrains.annotations.Nullable;
 
 /**
- * Independent of any island for the party half of this screen — reachable via
- * {@link com.skyframework.islandcoreclient.keybind.OpenPartyKeybind} (default key P) or
- * {@code /islandparty} regardless of {@code ClientIslandCache.hasIsland()}. As of the "alianzas"
- * consolidation sprint, this screen ALSO hosts individual-player alliance management (an island
- * concept — {@code IslandRole.ALLY}, see {@code ClientIslandCache}) and all four location-sharing
- * toggles, replacing the retired AllianceScreen/Dashboard alliance tab entirely.
+ * Reached from the Dashboard's single "Party" button (replacing the old separate "Miembros" button
+ * and the retired {@code OpenPartyKeybind}/{@code /islandparty} access) — always clickable regardless
+ * of {@code ClientIslandCache.hasIsland()}, since the party half of this screen never depended on an
+ * island to begin with. As of the "alianzas" consolidation sprint, this screen ALSO hosts
+ * individual-player alliance management (an island concept — {@code IslandRole.ALLY}, see
+ * {@code ClientIslandCache}) and all four location-sharing toggles, replacing the retired
+ * AllianceScreen/Dashboard alliance tab entirely. As of the "fusión Miembros+Party" sprint, it also
+ * absorbs the old standalone {@code MembersScreen} (island member list, invite, trust/remove) as its
+ * own first page — see {@link Page#MEMBERS}.
  *
- * <p>Back down to 2 pages (see {@link Page}) after a 3-page detour: splitting Aliados onto its own
- * page turned out to be more separation than needed once the member LIST itself (the actually
- * unbounded part) already moved out to {@link PartyMembersScreen} — the compact add-ally FORM
- * (2 widgets, fixed height) fits comfortably back on Página 1 alongside invite/rename. That screen
- * now shows members AND allies together (same split {@code AdminIslandDetailScreen} uses for
- * {@code AdminIslandMembersScreen}), reached via a top-bar "Ver miembros y aliados (N/M)" button in
- * the same reserved right-hand slot.
+ * <p>3 pages (see {@link Page}): {@code MEMBERS} was folded in as a new first page rather than a
+ * separate screen, reusing the exact same pagination this screen already had for PARTY/SHARING —
+ * consistent with the member LIST itself (the actually unbounded part) already living in its own
+ * page/screen elsewhere ({@link PartyMembersScreen} for party members+allies).
  *
  * <p>Navigation: "&lt;&lt; Anterior" / "Siguiente &gt;&gt;" at the BOTTOM, left/right-aligned with a
  * centered page indicator between them — the exact same {@code islandcoreclient.pagination.*}
@@ -63,15 +69,22 @@ import org.jetbrains.annotations.Nullable;
  * {@link #page} is a plain persistent field surviving {@link #clearAndInit()} the same way
  * {@code PagedFlagGrid#currentPage} does.
  *
- * <p><b>Page 1 (PARTY)</b>: party name/leader, invite field+button (leader only), rename field+
- * button (leader only), add-ally field+button (gated on {@code ClientIslandCache.hasIsland()},
- * independent of party state/leadership), then "Salir de la party" / "Disolver party" side by side
- * in the SAME row (leader-only for Disolver). <b>Page 2 (SHARING)</b>: the 4 location-sharing
- * toggles + [DEBUG], unchanged.
+ * <p><b>Page 1 (MEMBERS)</b>: the island's member list (name+role), invite field+button, and
+ * trust/remove per row — identical to the old {@code MembersScreen}, except when the player has no
+ * island: the whole section renders dimmed/empty (same {@code 0x777777} pattern
+ * {@code DashboardScreen} already uses for its own "no island" state) instead of disappearing, since
+ * the Party button — and this screen — must stay usable either way. <b>Page 2 (PARTY)</b>: party
+ * name/leader, invite field+button (leader only), rename field+button (leader only), add-ally
+ * field+button (gated on {@code ClientIslandCache.hasIsland()}, independent of party state/
+ * leadership), then "Salir de la party" / "Disolver party" side by side in the SAME row (leader-only
+ * for Disolver). <b>Page 3 (SHARING)</b>: the 4 location-sharing toggles + [DEBUG], unchanged.
  */
 public class PartyScreen extends BaseMenuScreen {
 	private enum Page {
-		PARTY, SHARING
+		MEMBERS, PARTY, SHARING
+	}
+
+	private record IndexedWidget(int rowIndex, ClickableWidget widget) {
 	}
 
 	// Mirrors the server's PartyDisbandRequests.TIMEOUT — purely for the local countdown display;
@@ -97,15 +110,26 @@ public class PartyScreen extends BaseMenuScreen {
 	private static final int CONTENT_TOP = TOP_BAR_HEIGHT + 8;
 
 	// Same slot DashboardScreen's admin toggle and AdminIslandDetailScreen's "Ver miembros" button
-	// already use — the top bar's reserved right-hand area. Widened from that button's 150 to fit
-	// the combined "N/M" label comfortably.
-	private static final int TOP_BAR_ACTION_WIDTH = 170;
+	// already use — the top bar's reserved right-hand area. Shared by both the PARTY/SHARING pages'
+	// "Ver miembros y aliados (N/M)" button and the MEMBERS page's "Invitaciones pendientes (N)"
+	// button (only one is ever built at a time, per page — see initTopBar) — widened to 180 (from
+	// the "N/M" label's own 170) so the longer "Invitaciones pendientes" label, previously
+	// MembersScreen's own dedicated TOP_BAR_ACTION_WIDTH, fits too.
+	private static final int TOP_BAR_ACTION_WIDTH = 180;
 	private static final int TOP_BAR_ACTION_HEIGHT = 20;
 
 	// Exact same constants/position as SettingsScreen's own pagination row (bottom, not top bar).
 	private static final int PAGINATION_ROW_HEIGHT = 20;
 	private static final int PAGINATION_BUTTON_WIDTH = 90;
 	private static final int CONTENT_BOTTOM_MARGIN = 12;
+
+	// MEMBERS page — same values the old standalone MembersScreen used.
+	private static final int MEMBERS_ROW_HEIGHT = 20;
+	private static final int MEMBERS_ROW_SPACING = 4;
+	private static final int MEMBERS_ACTION_BUTTON_WIDTH = 60;
+	private static final int MEMBERS_ACTION_BUTTON_HEIGHT = 16;
+	private static final int MEMBERS_FIRST_ROW_Y = TOP_BAR_HEIGHT + 12;
+	private static final int MEMBERS_INVITE_ROW_HEIGHT = 20;
 
 	// 0 = no pending disband request. Screen-local UI flow state, not party data.
 	private long pendingDisbandExpiresAtMillis = 0L;
@@ -117,6 +141,12 @@ public class PartyScreen extends BaseMenuScreen {
 	private TextFieldWidget inviteField;
 	private TextFieldWidget renameField;
 	private TextFieldWidget allyField;
+
+	// MEMBERS page state — same shape as the old standalone MembersScreen.
+	private final ScrollableRowList memberList =
+			new ScrollableRowList(CONTENT_X, MEMBERS_FIRST_ROW_Y, 1, 1, MEMBERS_ROW_HEIGHT, MEMBERS_ROW_SPACING);
+	private final List<IndexedWidget> memberRowWidgets = new ArrayList<>();
+	private TextFieldWidget membersInviteField;
 
 	public PartyScreen(Screen parent) {
 		super(Text.translatable("islandcoreclient.party.title"), parent);
@@ -140,16 +170,30 @@ public class PartyScreen extends BaseMenuScreen {
 		initPagination();
 
 		switch (page) {
+			case MEMBERS -> initMembersPage();
 			case PARTY -> initPartyPage();
 			case SHARING -> initSharingPage();
 		}
 	}
 
-	// "Ver miembros y aliados (N/M)" — same top-bar reserved slot AdminIslandDetailScreen's own
-	// view-members button uses, present on both pages (shared top-bar content). Shown whenever
-	// there's anything to view on either list: a party (even with 0 other members) OR an island
-	// (for its allies) — the merged PartyMembersScreen no longer requires a party to be useful.
+	// One reserved top-bar-right slot, shared by two mutually-exclusive buttons depending on the
+	// current page: "Invitaciones pendientes (N)" on MEMBERS (only when there's an island to have
+	// pending invites for — same button the old standalone MembersScreen had), or "Ver miembros y
+	// aliados (N/M)" on PARTY/SHARING (unchanged from before this screen absorbed MEMBERS).
 	private void initTopBar() {
+		if (page == Page.MEMBERS) {
+			if (!ClientIslandCache.hasIsland()) {
+				return;
+			}
+			this.addDrawableChild(ButtonWidget.builder(
+							Text.translatable("islandcoreclient.members.pending_invites_button", ClientIslandCache.getPendingInvites().size()),
+							button -> this.client.setScreen(new PendingInvitesScreen(this)))
+					.dimensions(this.width - 8 - TOP_BAR_ACTION_WIDTH, (TOP_BAR_HEIGHT - TOP_BAR_ACTION_HEIGHT) / 2,
+							TOP_BAR_ACTION_WIDTH, TOP_BAR_ACTION_HEIGHT)
+					.build());
+			return;
+		}
+
 		boolean hasParty = ClientPartyCache.hasParty();
 		boolean hasIsland = ClientIslandCache.hasIsland();
 		if (!hasParty && !hasIsland) {
@@ -192,6 +236,72 @@ public class PartyScreen extends BaseMenuScreen {
 	private void onPageChanged(Page target) {
 		this.page = target;
 		this.clearAndInit();
+	}
+
+	// Absorbed verbatim from the old standalone MembersScreen, with one addition: when the player has
+	// no island, the member list/invite form are simply not built (members stays an empty list,
+	// hasIsland-gated widgets are skipped) — renderMembersPage draws a dimmed "no island" message in
+	// their place instead, same pattern DashboardScreen already uses for its own no-island state. The
+	// screen (and its Party page) stays fully usable either way.
+	private void initMembersPage() {
+		boolean hasIsland = ClientIslandCache.hasIsland();
+
+		int fieldWidth = 160;
+		int buttonWidth = 70;
+		int inviteFieldY = this.height - 16 - MEMBERS_INVITE_ROW_HEIGHT;
+		int fieldX = this.width / 2 - (fieldWidth + 4 + buttonWidth) / 2;
+		int listBottom = inviteFieldY - SECTION_GAP;
+
+		int viewportWidth = this.width - CONTENT_X - 16;
+		int viewportHeight = Math.max(MEMBERS_ROW_HEIGHT, listBottom - MEMBERS_FIRST_ROW_Y);
+		memberList.setViewport(CONTENT_X, MEMBERS_FIRST_ROW_Y, viewportWidth, viewportHeight);
+
+		List<ClientMemberView> members = hasIsland ? ClientIslandCache.getMembers() : List.of();
+		memberList.setItemCount(members.size());
+		memberRowWidgets.clear();
+		int actionsX = this.width - 16 - MEMBERS_ACTION_BUTTON_WIDTH;
+		for (int i = 0; i < members.size(); i++) {
+			ClientMemberView member = members.get(i);
+			int buttonY = memberList.getRowY(i) + (MEMBERS_ROW_HEIGHT - MEMBERS_ACTION_BUTTON_HEIGHT) / 2;
+			boolean rowVisible = memberList.isRowVisible(i);
+			if (member.role() == ClientMemberView.Role.MEMBER || member.role() == ClientMemberView.Role.CO_OWNER) {
+				addMemberRowButton(trustButtonLabel(member.role() == ClientMemberView.Role.CO_OWNER),
+						actionsX - MEMBERS_ACTION_BUTTON_WIDTH - 4, buttonY, rowVisible, i,
+						() -> onTrustClicked(member.uuid(), member.role()));
+				addMemberRowButton(Text.translatable("islandcoreclient.members.remove"), actionsX, buttonY, rowVisible, i,
+						() -> onRemoveClicked(member.uuid()));
+			}
+		}
+
+		if (hasIsland) {
+			this.membersInviteField = new TextFieldWidget(this.textRenderer, fieldX, inviteFieldY, fieldWidth, MEMBERS_INVITE_ROW_HEIGHT,
+					Text.translatable("islandcoreclient.members.invite_placeholder"));
+			this.membersInviteField.setPlaceholder(Text.translatable("islandcoreclient.members.invite_placeholder"));
+			this.membersInviteField.setMaxLength(32);
+			this.addDrawableChild(this.membersInviteField);
+
+			this.addDrawableChild(ButtonWidget.builder(Text.translatable("islandcoreclient.members.invite_button"),
+							button -> onMemberInviteClicked())
+					.dimensions(fieldX + fieldWidth + 4, inviteFieldY, buttonWidth, MEMBERS_INVITE_ROW_HEIGHT)
+					.build());
+		}
+	}
+
+	// Bold + aqua (same color ClientMemberView.Role.label() uses for CO_OWNER) when the row is
+	// currently CO_OWNER, plain otherwise — a highlighted "Trust" button reads as "already trusted",
+	// same visual language ToggleRow-style active states already use elsewhere.
+	private static Text trustButtonLabel(boolean isCoOwner) {
+		Text base = Text.translatable("islandcoreclient.members.trust");
+		return isCoOwner ? base.copy().formatted(Formatting.AQUA, Formatting.BOLD) : base;
+	}
+
+	private void addMemberRowButton(Text text, int x, int y, boolean rowVisible, int rowIndex, Runnable onClick) {
+		ButtonWidget button = this.addDrawableChild(ButtonWidget.builder(text, b -> onClick.run())
+				.dimensions(x, y, MEMBERS_ACTION_BUTTON_WIDTH, MEMBERS_ACTION_BUTTON_HEIGHT)
+				.build());
+		button.visible = rowVisible;
+		button.active = rowVisible;
+		memberRowWidgets.add(new IndexedWidget(rowIndex, button));
 	}
 
 	// Purely top-down: invite/rename (leader only) -> add-ally (hasIsland only) -> leave/disband row
@@ -371,9 +481,99 @@ public class PartyScreen extends BaseMenuScreen {
 		context.drawTextWithShadow(this.textRenderer, indicator, this.width / 2 - indicatorWidth / 2,
 				paginationRowY() + (PAGINATION_ROW_HEIGHT - this.textRenderer.fontHeight) / 2, 0xAAAAAA);
 
-		if (page == Page.PARTY) {
+		if (page == Page.MEMBERS) {
+			renderMembersPage(context);
+		} else if (page == Page.PARTY) {
 			renderPartyPage(context);
 		}
+	}
+
+	// Scrolling only matters on the MEMBERS page's list — same guard/delegation MembersScreen used.
+	@Override
+	public boolean mouseScrolled(double mouseX, double mouseY, double horizontalAmount, double verticalAmount) {
+		if (page == Page.MEMBERS && memberList.isMouseOver(mouseX, mouseY)) {
+			memberList.scroll(verticalAmount);
+			for (IndexedWidget iw : memberRowWidgets) {
+				boolean visible = memberList.isRowVisible(iw.rowIndex());
+				iw.widget().setY(memberList.getRowY(iw.rowIndex()));
+				iw.widget().visible = visible;
+				iw.widget().active = visible;
+			}
+			return true;
+		}
+		return super.mouseScrolled(mouseX, mouseY, horizontalAmount, verticalAmount);
+	}
+
+	// Dimmed "no island" message, same color DashboardScreen's own no-island member rows use,
+	// instead of an empty list with no explanation — the Party half of this screen stays fully
+	// functional regardless, so this section alone goes quiet rather than the whole screen.
+	private void renderMembersPage(DrawContext context) {
+		if (!ClientIslandCache.hasIsland()) {
+			context.drawTextWithShadow(this.textRenderer,
+					Text.translatable("islandcoreclient.reason.no_island"), CONTENT_X, MEMBERS_FIRST_ROW_Y, 0x777777);
+			return;
+		}
+
+		List<ClientMemberView> members = ClientIslandCache.getMembers();
+		memberList.startClip(context);
+		for (int i = 0; i < members.size(); i++) {
+			if (!memberList.isRowVisible(i)) {
+				continue;
+			}
+			ClientMemberView member = members.get(i);
+			Text line = Text.literal(member.name() + " ").append(member.role().label());
+			int y = memberList.getRowY(i);
+			context.drawTextWithShadow(this.textRenderer, line, CONTENT_X, y + (MEMBERS_ROW_HEIGHT - this.textRenderer.fontHeight) / 2, 0xFFFFFF);
+		}
+		memberList.endClip(context);
+		memberList.renderScrollbar(context);
+	}
+
+	// MemberTrustC2S toggles by the target's CURRENT role server-side (see
+	// MembershipService#toggleCoOwner), so currentRole (captured at click time) is what decides the
+	// optimistic new role here too.
+	private void onTrustClicked(UUID uuid, ClientMemberView.Role currentRole) {
+		ClientMemberView.Role newRole = currentRole == ClientMemberView.Role.CO_OWNER
+				? ClientMemberView.Role.MEMBER : ClientMemberView.Role.CO_OWNER;
+		ClientPlayNetworking.send(new MemberTrustC2S(uuid));
+		PendingActionTracker.await((success, reasonKey) -> {
+			if (success) {
+				ClientIslandCache.setMemberRole(uuid, newRole);
+			} else {
+				ClientErrorToasts.showReason(reasonKey);
+			}
+			this.clearAndInit();
+		});
+	}
+
+	private void onRemoveClicked(UUID uuid) {
+		ClientPlayNetworking.send(new MemberRemoveC2S(uuid));
+		PendingActionTracker.await((success, reasonKey) -> {
+			if (success) {
+				ClientIslandCache.removeMember(uuid);
+			} else {
+				ClientErrorToasts.showReason(reasonKey);
+			}
+			this.clearAndInit();
+		});
+	}
+
+	private void onMemberInviteClicked() {
+		String targetName = this.membersInviteField.getText().trim();
+		if (targetName.isEmpty()) {
+			return;
+		}
+		ClientPlayNetworking.send(new MemberInviteC2S(targetName));
+		PendingActionTracker.await((success, reasonKey) -> {
+			if (success) {
+				// The real expiry (5 minutes) comes back on the next snapshot refresh; refetch now
+				// instead of guessing it locally.
+				ClientPlayNetworking.send(new IslandSnapshotRequestC2S());
+			} else {
+				ClientErrorToasts.showReason(reasonKey);
+			}
+			this.clearAndInit();
+		});
 	}
 
 	private void renderPartyPage(DrawContext context) {

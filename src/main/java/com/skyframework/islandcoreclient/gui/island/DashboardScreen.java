@@ -6,6 +6,7 @@ import com.skyframework.islandcoreclient.gui.admin.DimensionManagerScreen;
 import com.skyframework.islandcoreclient.gui.admin.SpawnManagerScreen;
 import com.skyframework.islandcoreclient.gui.admin.VanillaResetScreen;
 import com.skyframework.islandcoreclient.gui.common.BaseMenuScreen;
+import com.skyframework.islandcoreclient.gui.party.PartyScreen;
 import com.skyframework.islandcoreclient.gui.common.TimeFormat;
 import com.skyframework.islandcoreclient.network.ClientErrorToasts;
 import com.skyframework.islandcoreclient.network.PendingActionTracker;
@@ -61,7 +62,7 @@ public class DashboardScreen extends BaseMenuScreen {
 
 	// Player-view widgets (only non-null while !showingAdmin).
 	private ButtonWidget settingsButton;
-	private ButtonWidget membersButton;
+	private ButtonWidget partyButton;
 	private ButtonWidget biomeButton;
 	private ButtonWidget limitsButton;
 	private ButtonWidget teleportsButton;
@@ -118,9 +119,13 @@ public class DashboardScreen extends BaseMenuScreen {
 						button -> this.client.setScreen(new SettingsScreen(this)))
 				.dimensions(startX, row1Y, ACTION_BUTTON_WIDTH, ACTION_BUTTON_HEIGHT)
 				.build());
-		this.membersButton = this.addDrawableChild(ButtonWidget.builder(
-						Text.translatable("islandcoreclient.dashboard.members_button"),
-						button -> this.client.setScreen(new MembersScreen(this)))
+		// Unlike every other action button here, Party must stay clickable with no island: the
+		// island-members half of the merged screen just renders dimmed/empty in that case (see
+		// PartyScreen's own MEMBERS page), but the party half never depended on having an island —
+		// so this one is deliberately NOT gated by hasIsland in renderPlayerContent below.
+		this.partyButton = this.addDrawableChild(ButtonWidget.builder(
+						Text.translatable("islandcoreclient.dashboard.party_button"),
+						button -> this.client.setScreen(new PartyScreen(this)))
 				.dimensions(startX + (ACTION_BUTTON_WIDTH + ACTION_BUTTON_GAP), row1Y, ACTION_BUTTON_WIDTH, ACTION_BUTTON_HEIGHT)
 				.build());
 		this.biomeButton = this.addDrawableChild(ButtonWidget.builder(
@@ -247,8 +252,9 @@ public class DashboardScreen extends BaseMenuScreen {
 		// island yet they stay visible but dimmed rather than disappearing, per design.
 		this.settingsButton.visible = connected;
 		this.settingsButton.active = connected && hasIsland;
-		this.membersButton.visible = connected;
-		this.membersButton.active = connected && hasIsland;
+		// Not hasIsland-gated like the rest of this row — see the field's own comment above.
+		this.partyButton.visible = connected;
+		this.partyButton.active = connected;
 		this.biomeButton.visible = connected;
 		this.biomeButton.active = connected && hasIsland;
 		this.limitsButton.visible = connected;

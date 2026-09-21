@@ -83,7 +83,7 @@
 	"islandcoreclient.exceptions.group.cakes.description": "When enabled, anyone can eat cakes on your island, even without permission.",
 
 	"islandcoreclient.dashboard.settings_button": "Settings",
-	"islandcoreclient.dashboard.members_button": "Members",
+	"islandcoreclient.dashboard.party_button": "Party",
 	"islandcoreclient.dashboard.biome_button": "Biome",
 	"islandcoreclient.dashboard.limits_button": "Limits",
 	"islandcoreclient.dashboard.teleports_button": "Teleports",
@@ -157,6 +157,7 @@
 	"islandcoreclient.teleports.type.home": "Home",
 	"islandcoreclient.teleports.type.spawn": "Spawn",
 	"islandcoreclient.teleports.type.rtp": "RTP",
+	"islandcoreclient.teleports.type.overworld": "Overworld",
 	"islandcoreclient.teleports.type.farming": "Farming",
 
 	"islandcoreclient.error.toast_title": "Action failed",
